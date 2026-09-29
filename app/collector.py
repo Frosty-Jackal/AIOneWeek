@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterable
 from datetime import date as date_cls
 from datetime import timedelta
 
@@ -19,7 +20,10 @@ logger = logging.getLogger(__name__)
 
 DEGRADE_SUFFIX = "（未经联网核验）"
 
-# Spec1 §5.1 —— 模板原样，不得改写
+# Spec1 §5.1 —— 模板原样，不得改写。
+# 结尾两段是 Spec2 追加的约束：§2.1 的「用户原文」（逐字，不得改写）与
+# §9.3 第 1 层的「参考链接格式规约」（旧版的「参考链接格式需规范url」一句
+# 约束不住模型 —— 实库里的脏值正是在旧 prompt 下产生的）。
 PROMPT_TEMPLATE = """请爬 {date} 的 AI 前沿技术，要求有创新或者性能相较以前有明显提升，若性能提升或创新性不足，甚至可以不用列出，列出的技术个数最多不超过 {max_items} 个，无则 return 无，参考以下网站：
 {sites}
 
@@ -31,6 +35,12 @@ PROMPT_TEMPLATE = """请爬 {date} 的 AI 前沿技术，要求有创新或者�
 【应用场景】海报制作、图像超分、图像修复
 【发布时间】2022年9月10日
 【参考链接】xxxx
+仅能为今天日期发布的，若不是，请不要返回给我！而且只要技术/模型，不要学术方法，参考链接格式需规范url
+其中【参考链接】必须满足：
+1. 只有一个 URL，形如 https://arxiv.org/abs/2609.29808 或 https://huggingface.co/zai-org/GLM-5.3
+2. 不得附带括号注释、说明文字，不得用「；」并列多个链接，不得换行
+3. 必须指向该技术自身的页面（论文页 / 模型页 / 官方博客原文），不得使用 HuggingFace Papers 趋势榜、Papers with Code 等聚合榜页，也不得使用转载新闻页
+4. 找不到该技术的具体页面时，【参考链接】直接写：无
 """
 
 
@@ -71,12 +81,18 @@ def daily_cost(db: Session, day: str) -> float:
     return float(total or 0.0)
 
 
-def build_prompt(db: Session, day: str) -> str:
-    sites = "\n".join(enabled_sites(db)) or "（未配置参考网站，请凭已有知识回答）"
+def build_prompt(db: Session, day: str, sites: Iterable[str]) -> str:
+    """拼装当日 prompt。
+
+    `sites` 由调用方查一次后传入（Spec2 §9.3）—— 同一次采集里 `parser.parse()`
+    也要用它剔除「来源站原样回填」的参考链接，两边各查一次库没有意义。
+    `db` 只为保持签名稳定而保留，函数本身不再访问数据库。
+    """
+    joined = "\n".join(sites) or "（未配置参考网站，请凭已有知识回答）"
     return PROMPT_TEMPLATE.format(
         date=format_prompt_date(day),
         max_items=settings.max_items_per_day,
-        sites=sites,
+        sites=joined,
     )
 
 
@@ -122,7 +138,9 @@ def _collect(db: Session, day: str, force: bool, admin_id: int | None) -> DailyR
     # 成本护栏（§9）→ 降级（§5.5）
     degrade_mode = daily_cost(db, day) >= settings.cost_daily_limit_cny
 
-    prompt = build_prompt(db, day)
+    # 来源站只查一次：prompt 拼装与下面的 parse() 共用（Spec2 §9.3）
+    sites = enabled_sites(db)
+    prompt = build_prompt(db, day, sites)
     stamp = now_iso()
 
     try:
@@ -139,7 +157,7 @@ def _collect(db: Session, day: str, force: bool, admin_id: int | None) -> DailyR
         db.refresh(run)
         return run
 
-    status, items = parser.parse(result.text, settings.max_items_per_day)
+    status, items = parser.parse(result.text, settings.max_items_per_day, sites)
 
     if degrade_mode:
         write_audit(db, admin_id, "cost_limit_degrade", day)
