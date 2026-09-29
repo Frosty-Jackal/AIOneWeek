@@ -276,6 +276,18 @@
     );
   }
 
+  /* 参考链接直接来自模型输出，必须校验协议：只放行 http/https，
+     避免 javascript: 一类被当成可点击链接（Spec2 §9.3）。 */
+  function safeUrl(raw) {
+    if (!raw) return null;
+    try {
+      const u = new URL(raw, location.origin);
+      return u.protocol === "http:" || u.protocol === "https:" ? u.href : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   function renderItem(item, seq) {
     const wrap = el("article", "item");
     const title = el("h4", null, `${seq}. ${item.tech_name || "（未命名）"}`);
@@ -293,14 +305,19 @@
 
     const meta = el("div", "meta");
     if (item.publish_date) meta.append(el("span", null, `发布时间：${item.publish_date}`));
-    if (item.ref_link) {
-      const a = el("a", "ref", "参考链接");
-      a.href = item.ref_link;
+
+    // 两种情况都有输出：拿不到有效链接时不留空，直接给出下一步动作
+    const href = safeUrl(item.ref_link);
+    if (href) {
+      const a = el("a", "ref", "参考链接 ↗");
+      a.href = href;
       a.target = "_blank";
       a.rel = "noopener noreferrer";
       meta.append(a);
+    } else {
+      meta.append(el("span", "ref-none", "暂无链接，建议上网搜索"));
     }
-    if (meta.childNodes.length) wrap.append(meta);
+    wrap.append(meta);
     return wrap;
   }
 
@@ -352,10 +369,11 @@
   }
 
   /* 首次补采要逐日串行调用模型，一天约 20 秒。静态文案会让用户以为卡死，
-     所以显示实时秒数。 */
+     所以显示实时秒数。不再暴露「每天 20 秒」这个内部估算 —— 它把用户的
+     注意力引向后台耗时，而用户只需要知道「还在跑、别关」。 */
   function startWaitTicker() {
     let secs = 0;
-    const paint = () => setStatus(`正在获取当周数据…（首次需逐日补采，约每天 20 秒）已等待 ${secs} 秒`);
+    const paint = () => setStatus(`正在获取当周数据…已等待 ${secs} 秒，请耐心等待！`);
     paint();
     const id = setInterval(() => {
       secs += 1;
@@ -367,20 +385,48 @@
   async function loadWeekly() {
     const btn = $("#btn-weekly");
     if (btn) btn.disabled = true;
-    const stopTicker = startWaitTicker();
+    let stopTicker = null;
+
+    // 未登录时不得进入等待态：那会让用户以为采集已经在跑，
+    // 实际只是要弹登录框，属于假进度。
+    const askLogin = () => {
+      pendingAfterLogin = loadWeekly;
+      openAuth("view-login");
+    };
+
     try {
-      const data = await withAuth(() => apiJson("/api/weekly"));
-      if (!data) return; // 已弹登录框，登录成功后自动续跑
+      if (!currentUser) {
+        askLogin(); // 已知未登录：直接弹窗，计时器一次都不启动
+        return;
+      }
+
+      stopTicker = startWaitTicker();
+      const data = await apiJson("/api/weekly");
       renderDays(data.days);
+
       const range = `${data.range.from} ~ ${data.range.to}`;
-      const extra = data.collected_now?.length ? `，本次补采 ${data.collected_now.length} 天` : "";
+      // 补采天数只对管理员有意义：普通用户只关心「看到什么」，不关心后台采了几次
+      const extra =
+        PAGE === "admin" && data.collected_now?.length
+          ? `，本次补采 ${data.collected_now.length} 天`
+          : "";
       const failed = data.days.filter((d) => d.status === "failed").length;
       const warn = failed ? `；${failed} 天采集失败，稍后重试即可自动补采` : "";
       setStatus(`已展示 ${range}${extra}${warn}`, failed ? "" : "good");
     } catch (err) {
+      if (err.status === 401) {
+        // 会话中途失效（例如在另一个标签页退出登录）：先停计时器、清掉残留的
+        // 等待文案，再弹窗。只停表不清屏的话，登录框背后会一直挂着
+        // 「正在获取当周数据…已等待 N 秒」，看起来像还在跑（Spec2 §8.4）。
+        stopTicker?.();
+        stopTicker = null;
+        setStatus("");
+        askLogin();
+        return;
+      }
       setStatus(err.message, "bad");
     } finally {
-      stopTicker();
+      stopTicker?.();
       if (btn) btn.disabled = false;
     }
   }
@@ -423,8 +469,9 @@
           el("td", null, String(u.rating_count)),
           el("td", null, u.created_at)
         );
-        const ops = el("td");
-        const btn = el("button", "ghost", "查看");
+        // .ops 带 white-space: nowrap —— 文案从 2 字变 4 字后，窄列里会折行
+        const ops = el("td", "ops");
+        const btn = el("button", "ghost", "查看密码");
         btn.addEventListener("click", async () => {
           try {
             const data = await apiJson(`/api/admin/users/${u.id}/password`);
