@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AIOneWeek — 管理端</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-page="admin">
+
+<header class="topbar">
+  <div class="brand">AIOneWeek <span class="tag">管理端</span></div>
+  <div class="who">
+    <span id="whoami"></span>
+    <a class="link" href="/">用户端</a>
+    <button class="link" id="btn-logout">退出</button>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="main">主界面</button>
+  <button class="tab" data-tab="data">数据管理界面</button>
+</nav>
+
+<main>
+  <!-- 主界面：与用户端一致，另加采集控制 -->
+  <section id="tab-main">
+    <section class="hero" id="hero">
+      <h1>获取当周 AI 前沿技术</h1>
+      <p class="sub">滚动当周 7 天；缺口会自动串行补采</p>
+
+      <div class="collect-bar">
+        <label class="inline">日期<input type="date" id="collect-date"></label>
+        <label class="inline checkbox"><input type="checkbox" id="collect-force"> 强制刷新</label>
+        <button class="primary" id="btn-collect">获取该日期的 AI 前沿技术</button>
+      </div>
+
+      <button class="primary big" id="btn-weekly">查看当周内 AI 前沿技术</button>
+      <p class="hint" id="hero-status"></p>
+    </section>
+
+    <section id="results" hidden></section>
+  </section>
+
+  <!-- 数据管理界面：上下两个横块 -->
+  <section id="tab-data" hidden>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>用户</h2>
+        <button class="ghost" id="btn-refresh-users">刷新</button>
+      </div>
+      <table class="grid" id="users-table">
+        <thead>
+          <tr><th>ID</th><th>邮箱</th><th>角色</th><th>密码</th><th>调用次数</th><th>平均打分</th><th>评价数</th><th>注册时间</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>网站列表</h2>
+        <span class="row">
+          <input type="text" id="site-url" placeholder="https://example.com/trending">
+          <button class="primary" id="btn-add-site">新增</button>
+        </span>
+      </div>
+      <table class="grid" id="sites-table">
+        <thead>
+          <tr><th>ID</th><th>URL</th><th>启用</th><th>操作</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>评测集</h2>
+        <button class="ghost" id="btn-refresh-eval">刷新</button>
+      </div>
+      <table class="grid" id="eval-table">
+        <thead><tr><th>日期</th><th>Prompt</th><th>回填时间</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">所有条目均为 AI 生成，请核验参考链接。</footer>
+
+<dialog id="auth-dialog" class="dialog">
+  <form method="dialog" class="dialog-close-form"><button class="x" aria-label="关闭">×</button></form>
+  <div class="view" id="view-login">
+    <h2>管理员登录</h2>
+    <label>邮箱<input type="email" id="login-email" placeholder="you@example.com"></label>
+    <label>密码<input type="password" id="login-password" placeholder="2-8 位数字或英文"></label>
+    <button class="primary" id="btn-login">登录</button>
+  </div>
+  <p class="dialog-msg" id="auth-msg"></p>
+</dialog>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

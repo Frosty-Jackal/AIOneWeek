@@ -1,0 +1,19 @@
+# 凭据 —— 绝不入库
+.env
+
+# 数据库
+data/
+*.db
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

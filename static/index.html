@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AIOneWeek — 当周 AI 前沿技术</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-page="index">
+
+<header class="topbar">
+  <div class="brand">AIOneWeek</div>
+  <div class="who">
+    <span id="whoami"></span>
+    <a class="link" href="/admin" id="link-admin" hidden>管理端</a>
+    <button class="link" id="btn-logout" hidden>退出</button>
+  </div>
+</header>
+
+<main>
+  <section class="hero" id="hero">
+    <h1>AIOneWeek</h1>
+    <p class="sub">滚动当周 7 天，AI 前沿技术一处看完</p>
+    <button class="primary big" id="btn-weekly">查看当周内 AI 前沿技术</button>
+    <p class="hint" id="hero-status"></p>
+  </section>
+
+  <section id="results" hidden></section>
+</main>
+
+<footer class="foot">
+  所有条目均为 AI 生成，请核验参考链接。
+</footer>
+
+<!-- 登录 / 验证码登录 / 注册，页面不跳转 -->
+<dialog id="auth-dialog" class="dialog">
+  <form method="dialog" class="dialog-close-form"><button class="x" aria-label="关闭">×</button></form>
+
+  <!-- 主表单：邮箱 + 密码 -->
+  <div class="view" id="view-login">
+    <h2>登录</h2>
+    <label>邮箱<input type="email" id="login-email" autocomplete="username" placeholder="you@example.com"></label>
+    <label>密码<input type="password" id="login-password" autocomplete="current-password" placeholder="2-8 位数字或英文"></label>
+    <button class="primary" id="btn-login">登录</button>
+    <div class="or">或</div>
+    <div class="alt">
+      <button class="link" data-goto="view-code">验证码登录</button>
+      <button class="link" data-goto="view-register">注册账号</button>
+    </div>
+  </div>
+
+  <!-- 验证码登录 -->
+  <div class="view" id="view-code" hidden>
+    <h2>验证码登录</h2>
+    <label>邮箱<input type="email" id="code-email" placeholder="you@example.com"></label>
+    <label>验证码
+      <span class="row">
+        <input type="text" id="code-code" maxlength="4" inputmode="numeric" placeholder="4 位数字">
+        <button class="ghost" id="btn-send-login">发送验证码</button>
+      </span>
+    </label>
+    <button class="primary" id="btn-login-code">登录</button>
+    <div class="alt"><button class="link" data-goto="view-login">返回密码登录</button></div>
+  </div>
+
+  <!-- 注册 -->
+  <div class="view" id="view-register" hidden>
+    <h2>注册账号</h2>
+    <label>邮箱<input type="email" id="reg-email" placeholder="you@example.com"></label>
+    <label>验证码
+      <span class="row">
+        <input type="text" id="reg-code" maxlength="4" inputmode="numeric" placeholder="4 位数字">
+        <button class="ghost" id="btn-send-reg">发送验证码</button>
+      </span>
+    </label>
+    <label>密码<input type="password" id="reg-password" placeholder="2-8 位数字或英文"></label>
+    <button class="primary" id="btn-register">注册</button>
+    <div class="alt"><button class="link" data-goto="view-login">返回密码登录</button></div>
+  </div>
+
+  <p class="dialog-msg" id="auth-msg"></p>
+</dialog>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
