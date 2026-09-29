@@ -1,17 +1,40 @@
-/* AIOneWeek 样式（Spec1 §7）。桌面优先，单文件，无外部依赖。 */
+/* AIOneWeek 样式（Spec1 §7 骨架，Spec2 §5 金白主题）。
+   桌面优先，单文件，无外部依赖。
+
+   配色原则（Spec2 §5.1）：底色是暖白，金色只做点缀 —— 品牌名、按钮、标签、
+   细描边、星星。任何大面积深色背景、渐变铺底、光晕都不用。亮金（#D4AF37 一类）
+   在白底只有约 2:1，不得承载任何文字，只做装饰线。 */
 
 :root {
-  --bg: #f5f6f8;
-  --panel: #ffffff;
-  --ink: #1c1f23;
-  --ink-2: #5b6472;
-  --line: #e3e6ea;
-  --brand: #2f6df6;
-  --brand-ink: #ffffff;
-  --ok: #1f9d55;
-  --warn: #d98a00;
-  --bad: #d64545;
-  --radius: 10px;
+  /* 底色：暖白。带一丝米色，比纯白柔和，且与金色同色温 */
+  --bg:        #FBFAF6;
+  --bg-soft:   #F5F1E8;   /* 次级面：页签底、表头 */
+  --panel:     #FFFFFF;
+
+  /* 文字：暖黑系，不用纯黑 */
+  --ink:       #23211C;
+  --ink-2:     #6E6659;
+  --ink-3:     #797263;   /* 脚注、次要说明 */
+
+  /* 描边：暖灰金，替换 Spec1 的冷灰 */
+  --line:      #EBE5D8;
+  --line-2:    #DFD6C2;
+
+  /* 金 —— 三级各有专属用途，不得混用 */
+  --gold:      #8C6B1F;   /* 正文级：链接、按钮底。白底 4.95:1 */
+  --gold-deep: #6E5314;   /* 小字金 / hover / active。白底 7.2:1 */
+  --gold-line: #C9A227;   /* 装饰级：1px 金线、竖条、星星。不承载文字 */
+  --gold-soft: #F6EFDD;   /* 金色浅底：标签、药丸、选中态 */
+  --gold-ink:  #FFFFFF;   /* 金底上的文字 */
+
+  /* 语义色：按暖白底重新取值，避免冷色突兀 */
+  --ok:        #1F7A4D;
+  --warn:      #9A6B12;
+  --bad:       #B23A3A;
+
+  --radius:    10px;
+  --radius-lg: 14px;
+  --shadow:    0 1px 2px rgba(60,48,20,.05), 0 8px 24px rgba(60,48,20,.06);
 }
 
 * { box-sizing: border-box; }
@@ -34,24 +57,33 @@ input { font: inherit; }
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;             /* 150% 缩放下窄视口不撑出横向滚动条 */
   gap: 16px;
   padding: 12px 24px;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
+  /* 全站仅此一条金色横贯带，其余一律留白 */
+  box-shadow: inset 0 -2px 0 var(--gold-line);
   position: sticky;
   top: 0;
   z-index: 10;
 }
 
-.brand { font-weight: 700; letter-spacing: .3px; }
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand img.logo { height: 32px; width: auto; display: block; }
+.brand .name {
+  font-weight: 700;
+  color: var(--gold);
+  letter-spacing: .5px;
+}
 .brand .tag {
   font-size: 12px;
   font-weight: 500;
-  color: var(--brand);
-  border: 1px solid currentColor;
+  color: var(--gold-deep);
+  background: var(--gold-soft);
+  border: 1px solid var(--gold-line);
   border-radius: 999px;
   padding: 1px 8px;
-  margin-left: 6px;
 }
 
 .who { display: flex; align-items: center; gap: 14px; color: var(--ink-2); font-size: 14px; }
@@ -60,7 +92,7 @@ input { font: inherit; }
   background: none;
   border: 0;
   padding: 0;
-  color: var(--brand);
+  color: var(--gold);
   text-decoration: none;
   font-size: 14px;
 }
@@ -85,10 +117,11 @@ input { font: inherit; }
   border-radius: 8px 8px 0 0;
 }
 .tab.active {
-  color: var(--ink);
+  color: var(--gold);
   font-weight: 600;
-  background: var(--bg);
+  background: var(--panel);
   border-color: var(--line);
+  border-top: 2px solid var(--gold-line);
 }
 
 /* ---------- 主体 ---------- */
@@ -110,13 +143,14 @@ main { max-width: 940px; margin: 0 auto; padding: 32px 24px 64px; }
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius);
+  box-shadow: var(--shadow);
 }
 .collect-bar .inline { display: flex; align-items: center; gap: 8px; color: var(--ink-2); font-size: 14px; }
 .collect-bar input[type="date"] {
   padding: 6px 10px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-2);
   border-radius: 8px;
-  background: #fff;
+  background: var(--panel);
 }
 
 .hint { min-height: 22px; color: var(--ink-2); font-size: 14px; }
@@ -124,24 +158,25 @@ main { max-width: 940px; margin: 0 auto; padding: 32px 24px 64px; }
 .hint.bad { color: var(--bad); }
 
 button.primary {
-  background: var(--brand);
-  color: var(--brand-ink);
-  border: 1px solid var(--brand);
+  background: var(--gold);
+  color: var(--gold-ink);
+  border: 1px solid var(--gold);
   border-radius: 8px;
   padding: 9px 18px;
 }
-button.primary:hover { filter: brightness(1.06); }
+/* hover 只许变深 —— 变浅会让金底白字跌穿 4.5:1 */
+button.primary:hover { background: var(--gold-deep); border-color: var(--gold-deep); }
 button.primary:disabled { opacity: .55; cursor: default; }
 button.primary.big { font-size: 17px; padding: 13px 30px; }
 
 button.ghost {
-  background: #fff;
-  border: 1px solid var(--line);
+  background: var(--panel);
+  border: 1px solid var(--line-2);
   border-radius: 8px;
   padding: 7px 14px;
   color: var(--ink);
 }
-button.ghost:hover { border-color: var(--brand); color: var(--brand); }
+button.ghost:hover { border-color: var(--gold); color: var(--gold); }
 button.ghost.danger:hover { border-color: var(--bad); color: var(--bad); }
 button.ghost:disabled { opacity: .6; cursor: default; border-color: var(--line); color: var(--ink-2); }
 
@@ -152,28 +187,37 @@ button.ghost:disabled { opacity: .6; cursor: default; border-color: var(--line);
 .day {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
   padding: 18px 20px;
 }
 
 .day-head { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
-.day-head h3 { margin: 0; font-size: 17px; }
+.day-head h3 {
+  margin: 0;
+  font-size: 17px;
+  color: var(--ink);
+  border-left: 3px solid var(--gold-line);
+  padding-left: 10px;
+}
 
 .pill {
   font-size: 12px;
   padding: 2px 9px;
   border-radius: 999px;
-  border: 1px solid currentColor;
+  background: var(--gold-soft);
+  color: var(--gold-deep);
+  border: 1px solid var(--gold-line);
 }
-.pill.ok { color: var(--ok); }
-.pill.warn { color: var(--warn); }
-.pill.muted { color: var(--ink-2); }
+.pill.ok    { color: var(--ok);    background: var(--bg-soft); border: 1px solid var(--line-2); }
+.pill.warn  { color: var(--warn);  background: var(--bg-soft); border: 1px solid var(--line-2); }
+.pill.muted { color: var(--ink-2); background: var(--bg-soft); border: 1px solid var(--line-2); }
 
 .day-note { margin: 6px 0; }
-.day-foot { margin: 12px 0 0; font-size: 12px; color: #97a0ad; }
+.day-foot { margin: 12px 0 0; font-size: 12px; color: var(--ink-3); }
 
 .item {
-  border-top: 1px dashed var(--line);
+  border-top: 1px dashed var(--line-2);
   padding-top: 14px;
   margin-top: 14px;
 }
@@ -183,8 +227,9 @@ button.ghost:disabled { opacity: .6; cursor: default; border-color: var(--line);
 .field .label {
   display: inline-block;
   font-size: 12px;
-  color: var(--brand);
-  background: #eef3ff;
+  color: var(--gold-deep);       /* 12px 小字在金浅底上必须用 deep，--gold 只有 4.32:1 */
+  background: var(--gold-soft);
+  border: 1px solid var(--gold-line);
   border-radius: 5px;
   padding: 1px 7px;
   margin-bottom: 4px;
@@ -194,7 +239,8 @@ button.ghost:disabled { opacity: .6; cursor: default; border-color: var(--line);
 ul.scenarios { margin: 0; padding-left: 20px; }
 
 .meta { margin-top: 10px; display: flex; gap: 16px; font-size: 13px; color: var(--ink-2); }
-.meta a.ref { color: var(--brand); }
+.meta a.ref { color: var(--gold); }
+.meta .ref-none { color: var(--ink-3); }
 
 /* ---------- 评分条 ---------- */
 
@@ -206,6 +252,7 @@ ul.scenarios { margin: 0; padding-left: 20px; }
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius);
+  box-shadow: var(--shadow);
   font-size: 14px;
 }
 .rating-label { color: var(--ink-2); }
@@ -215,10 +262,11 @@ ul.scenarios { margin: 0; padding-left: 20px; }
   border: 0;
   font-size: 22px;
   line-height: 1;
-  color: #d6dae0;
+  color: #DCD5C6;
   padding: 0 2px;
 }
-.star:hover, .star.on { color: #f5b301; }
+/* 装饰性元素，允许用亮金 */
+.star:hover, .star.on { color: var(--gold-line); }
 .rating-tip { font-size: 13px; }
 
 .muted { color: var(--ink-2); }
@@ -229,9 +277,12 @@ ul.scenarios { margin: 0; padding-left: 20px; }
 .panel {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
   padding: 16px 18px;
   margin-bottom: 20px;
+  /* 表格列多，150% 缩放下让面板自己横向滚，不把整页撑宽 */
+  overflow-x: auto;
 }
 .panel-head {
   display: flex;
@@ -243,8 +294,9 @@ ul.scenarios { margin: 0; padding-left: 20px; }
 .panel-head h2 { margin: 0; font-size: 16px; }
 .panel-head input[type="text"] {
   width: 320px;
+  max-width: 100%;
   padding: 7px 10px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-2);
   border-radius: 8px;
 }
 .row { display: flex; align-items: center; gap: 8px; }
@@ -256,7 +308,13 @@ table.grid th, table.grid td {
   border-bottom: 1px solid var(--line);
   vertical-align: top;
 }
-table.grid th { color: var(--ink-2); font-weight: 600; font-size: 13px; }
+table.grid th {
+  background: var(--bg-soft);
+  color: var(--ink-2);
+  font-weight: 600;
+  font-size: 13px;
+}
+table.grid tbody tr:hover { background: var(--bg); }
 table.grid tr:last-child td { border-bottom: 0; }
 td.prompt-cell { max-width: 460px; }
 td.ops { white-space: nowrap; }
@@ -264,13 +322,15 @@ td.ops { white-space: nowrap; }
 /* ---------- 弹窗 ---------- */
 
 .dialog {
-  border: 0;
+  background: var(--panel);
+  border: 1px solid var(--line-2);
+  border-top: 3px solid var(--gold-line);
   border-radius: 12px;
   padding: 26px 26px 20px;
-  width: 360px;
-  box-shadow: 0 18px 48px rgba(20, 26, 38, .22);
+  width: min(360px, calc(100vw - 32px));
+  box-shadow: 0 18px 48px rgba(60,48,20,.18);
 }
-.dialog::backdrop { background: rgba(20, 26, 38, .38); }
+.dialog::backdrop { background: rgba(40,33,16,.32); }
 .dialog-close-form { margin: 0; }
 .dialog .x {
   position: absolute;
@@ -289,25 +349,52 @@ td.ops { white-space: nowrap; }
   width: 100%;
   margin-top: 5px;
   padding: 8px 10px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-2);
   border-radius: 8px;
+  background: var(--panel);
   color: var(--ink);
 }
 .dialog .row { align-items: stretch; }
 .dialog .row input { margin-top: 0; }
 .dialog .row .ghost { white-space: nowrap; margin-left: 6px; }
 .dialog button.primary { width: 100%; margin-top: 6px; }
-.dialog .or { text-align: center; color: #a8b0bb; font-size: 12px; margin: 12px 0; }
+.dialog .or { text-align: center; color: var(--ink-3); font-size: 12px; margin: 12px 0; }
 .dialog .alt { display: flex; justify-content: space-between; }
 .dialog-msg { min-height: 20px; margin: 12px 0 0; font-size: 13px; }
 .dialog-msg.good { color: var(--ok); }
 .dialog-msg.bad { color: var(--bad); }
 
+/* 客服邮箱位于三个视图之外，登录 / 验证码登录 / 注册下都常驻（Spec2 §6） */
+.dialog-foot {
+  margin: 10px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--ink-2);
+  text-align: center;
+}
+.dialog-foot a { color: var(--gold); }
+
+/* 焦点环必须可见（键盘可达性）。逐个容器写全，而不是只写 input:focus ——
+   `.dialog input` 与 `input:focus` 特异性同为 (0,1,1)，只靠通用规则会被按源序
+   覆盖掉边框色，焦点环静默消失。写全 + 放在所有 input 规则之后，才稳。 */
+input:focus,
+.dialog input:focus,
+.collect-bar input[type="date"]:focus,
+.panel-head input[type="text"]:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px var(--gold-soft);
+  outline: none;
+}
+
 /* ---------- 页脚 ---------- */
 
 .foot {
   text-align: center;
-  color: #97a0ad;
+  color: var(--ink-3);
   font-size: 12px;
+  border-top: 1px solid var(--line);
+  margin-top: 40px;
   padding: 0 24px 32px;
+  padding-top: 16px;
 }

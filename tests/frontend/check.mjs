@@ -386,6 +386,87 @@ async function testAdminPasswordButton(JSDOM) {
   ok("点击后第 4 列显示明文", true);
 }
 
+/** 元素自身及其所有祖先都没有 hidden 才算可见（jsdom 不做布局）。 */
+function isVisible(el) {
+  for (let node = el; node; node = node.parentElement) {
+    if (node.hasAttribute && node.hasAttribute("hidden")) return false;
+  }
+  return true;
+}
+
+async function testSupportEmailOnAllViews(JSDOM) {
+  console.log("\n§6 客服邮箱在三个视图下常驻");
+  for (const file of ["index.html", "admin.html"]) {
+    const routes = { "/api/auth/me": { status: 401, body: { detail: "未登录" } } };
+    if (file === "admin.html") {
+      routes["/api/admin/users"] = { body: [] };
+      routes["/api/admin/sites"] = { body: [] };
+      routes["/api/admin/eval-set"] = { body: [] };
+    }
+    const page = await openPage(JSDOM, file, routes);
+    await sleep(0);
+
+    const foot = page.$(".dialog-foot");
+    ok(`${file}: 存在 .dialog-foot`, !!foot);
+    if (!foot) continue;
+
+    const link = foot.querySelector("a");
+    eq(`${file}: mailto 链接`, link && link.getAttribute("href"), "mailto:frostyj@qq.com");
+    eq(`${file}: 文案`, foot.textContent, "客服邮箱：frostyj@qq.com");
+
+    // 位置：在 #auth-msg 之下（错误提示不挤压它）
+    const msg = page.$("#auth-msg");
+    ok(
+      `${file}: 位于 #auth-msg 之后`,
+      msg.compareDocumentPosition(foot) & 4 /* DOCUMENT_POSITION_FOLLOWING */,
+    );
+    ok(
+      `${file}: 与 #auth-msg 同属弹窗直接子元素（不在任何 .view 内）`,
+      foot.parentElement === msg.parentElement && foot.parentElement.id === "auth-dialog",
+    );
+
+    const views = [...page.document.querySelectorAll("#auth-dialog .view")];
+    ok(`${file}: 弹窗有视图`, views.length > 0);
+
+    // 逐个切过去：邮箱在每一个视图下都必须可见。视图个数按文件实际有的算 ——
+    // admin.html 只有「管理员登录」一个视图，把用户端的三视图要求套上去是错的。
+    for (const view of views) {
+      const id = view.id;
+      const goto = page.document.querySelector(`[data-goto="${id}"]`);
+      if (goto) {
+        goto.click();
+        await sleep(0);
+      }
+      ok(`${file}: 「${id}」视图下邮箱可见`, isVisible(foot));
+    }
+
+    if (file === "index.html") {
+      eq(
+        "index.html: 用户端恰有 3 个视图（登录 / 验证码登录 / 注册）",
+        views.map((v) => v.id).join(","),
+        "view-login,view-code,view-register",
+      );
+    }
+  }
+}
+
+async function testBrandLogo(JSDOM) {
+  console.log("\n§5.5 顶栏 logo");
+  for (const file of ["index.html", "admin.html"]) {
+    const page = await openPage(JSDOM, file, {
+      "/api/auth/me": { status: 401, body: { detail: "未登录" } },
+    });
+    await sleep(0);
+    const img = page.$(".brand img.logo");
+    ok(`${file}: .brand 内有 img.logo`, !!img);
+    if (!img) continue;
+    eq(`${file}: src`, img.getAttribute("src"), "/static/logo.png");
+    eq(`${file}: alt 必需（无障碍）`, img.getAttribute("alt"), "AIOneWeek");
+    ok(`${file}: logo 在品牌文字之前`, img.nextElementSibling?.classList.contains("name"));
+    ok(`${file}: 保留文字品牌名`, page.$(".brand .name")?.textContent === "AIOneWeek");
+  }
+}
+
 // ------------------------------------------------------------------ 入口
 
 const JSDOM = await loadJsdom();
@@ -404,6 +485,8 @@ await testWaitTickerText(JSDOM);
 await testCollectedNowVisibility(JSDOM);
 await testRefLinkRendering(JSDOM);
 await testAdminPasswordButton(JSDOM);
+await testSupportEmailOnAllViews(JSDOM);
+await testBrandLogo(JSDOM);
 
 console.log(`\n${passed} 项通过，${failures.length} 项失败`);
 for (const f of failures) console.log(`  ✗ ${f}`);
