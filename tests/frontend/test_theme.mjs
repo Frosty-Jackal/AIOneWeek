@@ -189,21 +189,23 @@ function testForbidden() {
     eq(`static/ 下无 ${stale}`, hits.join(","), "");
   }
 
-  // 亮金不得承载文字：全表里只允许 --gold-line 用作装饰
+  // 亮金不得承载文字或底色：全表扫描**所有**规则与所有着色属性。
+  //
+  // 早先先把候选规则收窄到「已声明 color/border-color 的」，于是
+  // 「只写 background: #d4af37」的规则永远进不了检查范围 —— 变异测试
+  // （把 .hero 的底色改成亮金）证明那条断言不会失败，等于没写。
   const brightGold = ["#d4af37", "#f5b301", "#ffd700"];
-  const textColorRules = rulesMatching((s) => !/:(hover|focus|active)\b/.test(s)).filter(
-    (r) => r.decls.color || r.decls["border-color"],
-  );
-  for (const hex of brightGold) {
-    const bad = textColorRules.filter((r) =>
-      [r.decls.color, r.decls["background"]].some((v) => (v || "").toLowerCase() === hex),
-    );
-    eq(`无规则用 ${hex} 承载文字/底色`, bad.map((r) => r.selectors.join(",")).join("|"), "");
+  const PAINT_PROPS = ["color", "background", "background-color", "border-color", "border-top-color", "border-bottom-color"];
+  const painted = [];
+  for (const rule of RULES) {
+    for (const prop of PAINT_PROPS) {
+      const value = (rule.decls[prop] || "").toLowerCase();
+      if (brightGold.some((hex) => value.includes(hex))) {
+        painted.push(`${rule.selectors.join(",")} { ${prop}: ${value} }`);
+      }
+    }
   }
-  ok(
-    "无规则把亮金写进 color（只允许 --gold-line 做装饰）",
-    !/color\s*:\s*#(d4af37|f5b301|ffd700)/i.test(CSS),
-  );
+  eq("无规则用亮金承载文字/底色（只允许 --gold-line 做装饰）", painted.join(" | "), "");
 
   // 主按钮 hover 只许变深（变浅会让白字跌穿 4.5:1）
   const primaryHover = declsOf("button.primary:hover");
@@ -220,14 +222,44 @@ function testForbidden() {
     ok(`${sel} 无渐变铺底`, !/gradient/.test(d.background || d["background-image"] || ""));
   }
   ok("全表无 text-shadow 发光", !/text-shadow/.test(CSS));
-  // 金色只允许做无模糊的实线（顶栏那条 inset 细线），有模糊半径就是光晕
-  const goldGlow = RULES.filter((r) => /box-shadow/.test(Object.keys(r.decls).join()))
-    .map((r) => ({ sel: r.selectors.join(","), shadow: r.decls["box-shadow"] || "" }))
-    .filter(({ shadow }) => shadow.includes("var(--gold-line)"))
+  // 金色只允许做无模糊的实线（顶栏那条 inset 细线），有模糊半径就是光晕。
+  //
+  // 颜色按**整族金色**识别：令牌、它解析出的值、亮金 hex、以及它们的 rgb() 写法。
+  // 早先只收字面写着 `var(--gold-line)` 的阴影，于是硬编码一个金色 hex
+  // （`0 0 12px #c9a227`）就能整条绕过 —— 变异测试证明那条断言不会失败。
+  const GOLD_SPELLINGS = [
+    "var(--gold-line)",
+    "var(--gold)",
+    "var(--gold-deep)",
+    "var(--gold-soft)",
+    ...brightGold,
+    token("--gold-line"),
+    token("--gold"),
+    token("--gold-deep"),
+  ].map((s) => String(s).replace(/\s+/g, "").toLowerCase());
+  // 同一颜色的 rgb()/rgba() 写法也要认（小数形式，逗号后可能有空格）
+  for (const hex of [...brightGold, token("--gold-line"), token("--gold"), token("--gold-deep")]) {
+    const n = parseInt(String(hex).slice(1), 16);
+    if (!Number.isFinite(n)) continue;
+    GOLD_SPELLINGS.push(`rgb(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`);
+  }
+  const isGoldShadow = (shadow) => {
+    const flat = String(shadow).replace(/\s+/g, "").toLowerCase();
+    return GOLD_SPELLINGS.some((spelling) => flat.includes(spelling));
+  };
+  const goldGlow = RULES.filter((r) => "box-shadow" in r.decls)
+    .map((r) => ({ sel: r.selectors.join(","), shadow: r.decls["box-shadow"] }))
+    .filter(({ shadow }) => isGoldShadow(shadow))
     .filter(({ shadow }) => {
       // 剥掉颜色后按位置取：inset? <x> <y> <blur> <spread>。写成 0 时没有单位，
       // 用 px 去正则匹配会漏判，所以按 token 位置取。
-      const parts = shadow.replace(/var\([^)]*\)/g, "").trim().split(/\s+/).filter((t) => t !== "inset");
+      const parts = shadow
+        .replace(/var\([^)]*\)/g, "")
+        .replace(/rgba?\([^)]*\)/g, "")
+        .replace(/#[0-9a-f]{3,8}/gi, "")
+        .trim()
+        .split(/\s+/)
+        .filter((t) => t !== "inset");
       const blur = parts[2] === undefined ? 0 : parseFloat(parts[2]);
       return !(blur === 0);
     });
@@ -237,10 +269,19 @@ function testForbidden() {
     "",
   );
 
-  // 顶栏只许一条金色横贯带
+  // 标题区只许一条金色横贯带。
+  //
+  // 早先只数 .topbar 自己的 inset，于是在 .tabs（顶栏正下方那条页签带）上
+  // 再加一条同样的金线不会被发现 —— 变异测试证明那条断言不会失败。
+  // 现在把整个标题堆叠一起数，且要求那一条必须长在 .topbar 上。
+  const bandOwners = [".topbar", ".tabs"].flatMap((sel) => {
+    const count = ((declsOf(sel)["box-shadow"] || "").match(/inset/g) || []).length;
+    // 别写成 Array(match || [])：Array([]) 的长度是 1 不是 0，Array([a,b]) 也是 1——
+    // 那样既会给没阴影的选择器凭空记一条，又会把两条并成一条。
+    return Array.from({ length: count }, () => sel);
+  });
+  eq("标题堆叠（.topbar + .tabs）只有一条金色横贯带", bandOwners.join("|"), ".topbar");
   const topbar = declsOf(".topbar");
-  const bands = (topbar["box-shadow"] || "").match(/inset/g) || [];
-  eq("顶栏只有一条金色横贯带", bands.length, 1);
   ok("顶栏的带子是 --gold-line 且 2px", /inset 0 -2px 0 var\(--gold-line\)/.test(topbar["box-shadow"] || ""));
 
   // 焦点环：每个输入类选择器都要有可见 focus

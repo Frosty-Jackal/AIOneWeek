@@ -127,6 +127,18 @@ class CollectFlowTest(unittest.TestCase):
         self.assertEqual(run.item_count, 0)
         self.assertEqual(self._items(run.date), [])
 
+    def test_natural_language_empty_reply_still_maps_to_empty(self):
+        """§10 #10：模型整句说「无」也算 empty。
+
+        后果落在这一层最重：parse_failed 是终态，needs_collect() 不会重试它，
+        用户端只会看到「该日数据解析异常」。新 prompt 更严 → 空手而归更常见，
+        这条路径必须仍然归 empty。
+        """
+        run = self._run("今日无符合条件的技术或模型。")
+        self.assertEqual(run.status, parser.STATUS_EMPTY)
+        self.assertEqual(run.item_count, 0)
+        self.assertEqual(self._items(run.date), [])
+
     def test_garbled_reply_still_maps_to_parse_failed(self):
         run = self._run("▲▲▲ 乱码乱码乱码乱码乱码乱码乱码乱码乱码乱码乱码乱码乱码")
         self.assertEqual(run.status, parser.STATUS_PARSE_FAILED)

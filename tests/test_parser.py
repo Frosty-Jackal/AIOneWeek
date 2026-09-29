@@ -169,6 +169,41 @@ class HelpersTest(unittest.TestCase):
             parser.is_aggregation_page("https://huggingface.co/papers/2609.02886", SITES)
         )
 
+    # --- ASCII 标点：括号要留、分隔符要断 ---
+
+    def test_ascii_parentheses_inside_url_are_preserved(self):
+        """维基百科式路径的圆括号是 URL 本体，截断后链接直接 404。"""
+        for url in (
+            "https://en.wikipedia.org/wiki/Attention_(machine_learning)",
+            "https://en.wikipedia.org/wiki/A_(b)",
+        ):
+            with self.subTest(url=url):
+                self.assertEqual(parser.normalize_ref_link(url, SITES), url)
+
+    def test_unbalanced_trailing_ascii_parenthesis_is_stripped(self):
+        """模型把链接括进括号写作「见 https://… )」时，那个右括号不属于 URL。"""
+        self.assertEqual(
+            parser.normalize_ref_link("见 (https://arxiv.org/abs/2609.29808v1)", SITES),
+            "https://arxiv.org/abs/2609.29808v1",
+        )
+        self.assertEqual(
+            parser.normalize_ref_link("https://arxiv.org/abs/2609.29808v1).", SITES),
+            "https://arxiv.org/abs/2609.29808v1",
+        )
+
+    def test_ascii_separated_second_url_is_not_swallowed(self):
+        """§9.3 承诺「多条只取第一条」—— ASCII 的 , ; 与中文 ；、同等对待。"""
+        for raw in (
+            "https://arxiv.org/abs/2609.29808v1, https://arxiv.org/abs/2609.02886",
+            "https://arxiv.org/abs/2609.29808v1; https://arxiv.org/abs/2609.02886",
+            "https://arxiv.org/abs/2609.29808v1,https://arxiv.org/abs/2609.02886",
+        ):
+            with self.subTest(raw=raw):
+                self.assertEqual(
+                    parser.normalize_ref_link(raw, SITES),
+                    "https://arxiv.org/abs/2609.29808v1",
+                )
+
     def test_norm_for_compare_does_not_touch_stored_value(self):
         """规范化只用于比对：带 query 的合法 URL 入库时不得被改写。"""
         raw = "https://example.com/paper?id=7#sec2"
@@ -218,6 +253,72 @@ class ParseWithSitesTest(unittest.TestCase):
         _, items = parser.parse(self.RAW, 1, SITES)
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]["tech_name"], "GLM-5.3")
+
+
+class EmptyReplyTest(unittest.TestCase):
+    """「这日返回了无」的判定（Spec1 §5.3 步骤 1）。
+
+    两个方向都必须守住：
+
+    - **正向**（Spec2 §10 #10）：新 prompt 加了「仅能为今天日期发布的…」等约束，
+      模型更容易一无所获。它未必照 prompt 说的只回一个「无」字，而可能回一整句
+      「今日无符合条件的技术或模型。」—— 语义相同，**不得**因此落 parse_failed。
+    - **反向**（Spec1 #18）：乱码、模板残片、道歉语必须落 parse_failed。empty 会被
+      前端渲染成「这日无前沿 AI 技术」，把「模型没答好」说成「今天确实没有」，
+      等于替模型圆谎，且掩盖了本该由管理员介入的解析异常。
+    """
+
+    ABSENT = (
+        "无",
+        "无。",
+        "没有",
+        "暂无",
+        "none",
+        "今日无符合条件的技术或模型。",
+        "今天（2026年9月29日）没有新的 AI 前沿技术发布。",
+        "今日暂无符合条件的技术。",
+        "本日无。",
+        "经检索，9月29日没有创新或性能提升明显的技术。",
+        "暂时没有符合条件的技术",
+        "本期未发现符合条件的技术，检索 HuggingFace 与 arXiv 的当日更新均为学术方法。",
+    )
+
+    # 反向用例里每一条都「差点」被误判成 empty，逐条说明它守的是什么
+    NOT_ABSENT = (
+        ("", "空回复走 parse_failed，由调用层判 failed"),
+        ("   ", "纯空白同上"),
+        ("▲▲▲ 乱码乱码乱码乱码乱码乱码乱码乱码乱码乱码乱码乱码乱码", "乱码（Spec1 #18）"),
+        ("抱歉，我无法完成这个请求。", "道歉语：说的是「做不到」，不是「今天没有」"),
+        ("系统错误：无法连接上游服务", "错误语：含「无」但语义相反"),
+        ("failed to fetch results", "英文失败语"),
+        ("【技术内容】输入条件，输出结果", "模板残片：有字段标记却没有【技术名】"),
+        ("无【技术名】", "含【技术名】标记 → 交给正常解析分支，不能在这里短路"),
+    )
+
+    def test_natural_language_absence_is_empty(self):
+        """§10 #10：更严的 prompt 不得把「整句说无」变成 parse_failed。"""
+        for text in self.ABSENT:
+            with self.subTest(text=text):
+                self.assertTrue(parser.is_empty_reply(text), f"漏判成 parse_failed：{text}")
+
+    def test_garbage_and_apology_are_not_empty(self):
+        """Spec1 #18：反向误判比漏判更糟 —— 它会把解析异常伪装成「今天没有」。"""
+        for text, why in self.NOT_ABSENT:
+            with self.subTest(text=text):
+                self.assertFalse(parser.is_empty_reply(text), f"误判成 empty：{why}")
+
+    def test_status_mapping_matches_the_predicate(self):
+        """判定最终要落到 status 上，这里从 parse() 出口再确认一次。"""
+        for text in self.ABSENT:
+            with self.subTest(text=text):
+                self.assertEqual(parser.parse(text, 5)[0], parser.STATUS_EMPTY)
+        for text, why in self.NOT_ABSENT:
+            with self.subTest(text=text):
+                self.assertEqual(
+                    parser.parse(text, 5)[0],
+                    parser.STATUS_PARSE_FAILED,
+                    f"状态判错：{why}",
+                )
 
 
 if __name__ == "__main__":

@@ -19,17 +19,55 @@ FIELD_MARKERS = (
 )
 REQUIRED_FIELDS = ("tech_name", "tech_content", "innovation")
 SCENARIO_SEP_RE = re.compile(r"[、，,]")
-EMPTY_WORDS = ("无", "none", "没有")
-# 去掉空白与标点后，正文长于此值就不再考虑「无」分支
-MAX_EMPTY_LEN = 20
+EMPTY_WORDS = ("无", "没有", "暂无", "未有", "未发现", "未检索到", "none")
+# 去掉空白与标点后，正文长于此值就不再考虑「无」分支。取值只作兜底：
+# 真正的判别靠下面两条（无【技术名】、整段是散文），长度只用来挡失控长文，
+# 故留足一句自然语言的余量。
+MAX_EMPTY_LEN = 60
 NOISE_RE = re.compile(r"[\s。.，,！!？?~～、；;：:\"'“”‘’（）()\[\]【】\-—*#]")
+# 「无」的陈述由汉字、数字、英文字母组成。乱码里的 ▲、模板残片、控制字符
+# 在这一步就被挡掉 —— Spec1 #18 要求纯乱码落 parse_failed。
+# 写成码点而不是把汉字直接敲进来：U+9FFF 那个字长得像「鿿」，读者看不出范围到哪。
+PROSE_RE = re.compile("^[一-鿿0-9a-z]+$")
+# 失败 / 道歉语汇。这类回复里同样会出现「无」字（「我无法完成」），但它说的是
+# 「做不到」，与「今天没有」语义相反；判成 empty 会让前端显示「这日无前沿 AI 技术」，
+# 把一次解析异常伪装成一次正常的空结果。
+FAILURE_WORDS = (
+    "无法",
+    "不能",
+    "抱歉",
+    "失败",
+    "错误",
+    "sorry",
+    "cannot",
+    "error",
+    "failed",
+    "unable",
+)
 
-# 参考链接里的 URL。刻意排除空白与中英文括号、方括号、尖括号、引号、中文标点 ——
+# 参考链接里的 URL。刻意排除空白、方括号、尖括号、引号与中英文标点 ——
 # 模型爱在 URL 后面接「（注释）」「；第二条链接」「换行说明」，这些一律截断
 # （Spec2 §9.1 的四种脏形态）。
-URL_RE = re.compile(r"https?://[^\s（）()【】\[\]<>\"'，。；、]+")
+#
+# ASCII 圆括号**不在**排除集里：维基百科一类条目的路径本身就带括号
+# （/wiki/Attention_(machine_learning)），排除它等于把链接截成 404。
+# 代价是「见 (url)」这类写法会把收尾的右括号吃进来，由 _strip_trailing_junk 配对剥掉。
+# 同理，`,` `;` 与中文 `，；、` 一起排除，才能兑现 §9.3「多条只取第一条」——
+# 只靠尾部剥离的话，「url1,url2」会被整个吞成一个 URL。
+URL_RE = re.compile(r"https?://[^\s（）【】\[\]<>\"'，。；、,;]+")
 # 紧贴 URL 的句末标点：正则允许它们出现在 URL 内，故捕获后需从尾部剥离
 URL_TRAILING_JUNK = ".,;:!?、。；：！？"
+
+
+def _strip_trailing_junk(url: str) -> str:
+    """剥掉紧贴 URL 的句末标点，以及**不成对**的右括号。
+
+    成对的括号一律保留（那是路径的一部分）；多出来的右括号才去掉。
+    """
+    url = url.rstrip(URL_TRAILING_JUNK)
+    while url.endswith(")") and url.count(")") > url.count("("):
+        url = url[:-1]
+    return url.rstrip(URL_TRAILING_JUNK)
 
 # daily_run.status 的四个取值集中在此定义，避免散落字符串字面量。
 # 前三个是解析结果；STATUS_FAILED 是调用层面的失败（网络/超时/未联网），
@@ -117,7 +155,7 @@ def normalize_ref_link(raw: str | None, sites: Iterable[str] = ()) -> str | None
     match = URL_RE.search(raw)
     if not match:
         return None
-    url = match.group(0).rstrip(URL_TRAILING_JUNK)  # 剥离紧贴 URL 的句末标点
+    url = _strip_trailing_junk(match.group(0))  # 剥离句末标点与不成对的右括号
     if not url or is_source_site(url, sites) or is_aggregation_page(url, sites):
         return None
     return url
@@ -126,10 +164,15 @@ def normalize_ref_link(raw: str | None, sites: Iterable[str] = ()) -> str | None
 def is_empty_reply(text: str) -> bool:
     """§5.3 步骤 1：整段回复本身就是在说「无」，且不含任何【技术名】。
 
-    判据是「去掉空白与标点后以 无/没有/none 开头，且长度不超过
-    MAX_EMPTY_LEN」。不能用子串包含来判断 —— 正常回复或纯乱码里
-    恰好出现「没有」二字（如「…没有标记的文字…」）会被误判成
-    「这日无前沿 AI 技术」，掩盖真正的 parse_failed。
+    早先只认「以 无/没有/none 开头」的字面前缀。Spec2 §10 #10 明文禁止新 prompt
+    因此把结果变成 parse_failed，而更严的 prompt 恰恰更容易让模型一无所获、
+    于是它未必照 prompt 说的只回一个「无」字，而会回一整句
+    「今日无符合条件的技术或模型。」—— 前缀是「今」，旧判据直接漏判。
+
+    所以判据改成「短篇散文 + 含否定词」，再用两条护栏挡反向误判：
+    整段不含【技术名】（有标记就交给正常解析分支），且不含失败/道歉语汇。
+    反向误判比漏判更糟：empty 会被前端渲染成「这日无前沿 AI 技术」，
+    把解析异常说成一次正常的空结果。
     """
     stripped = (text or "").strip()
     if not stripped or NAME_MARKER in stripped:
@@ -137,7 +180,11 @@ def is_empty_reply(text: str) -> bool:
     core = NOISE_RE.sub("", stripped).lower()
     if not core or len(core) > MAX_EMPTY_LEN:
         return False
-    return any(core.startswith(word) for word in EMPTY_WORDS)
+    if not PROSE_RE.match(core):  # 乱码、模板残片
+        return False
+    if any(word in core for word in FAILURE_WORDS):  # 「做不到」≠「没有」
+        return False
+    return any(word in core for word in EMPTY_WORDS)
 
 
 def parse(

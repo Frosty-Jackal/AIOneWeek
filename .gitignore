@@ -17,3 +17,13 @@ venv/
 .idea/
 Thumbs.db
 desktop.ini
+
+# 执行计划的临时工作区（progress 台账、审查包、迁移前数据库备份）。
+# 备份里含密码哈希，绝不能入库。原先只在 .superpowers/sdd/.gitignore 里写了
+# 一行 `*` 兜着，可那个文件自己没被跟踪 —— 它一旦丢失（git clean -fdx 就会），
+# db.bak 立刻变成「未跟踪但可见」，被 git add -A 悄悄收走。规则写在根目录才稳。
+.superpowers/
+
+# 前端验证期的 jsdom 安装位置（tests/frontend/check.mjs 的说明就写在这里）。
+# jsdom 只用于测试，不是运行时依赖（Spec2 §12），不进仓库。
+.devtools/
