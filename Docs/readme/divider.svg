@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="48" viewBox="0 0 1200 48" role="img" aria-label="金色分隔线">
+  <defs>
+    <linearGradient id="rule" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0"    stop-color="#D4AF37" stop-opacity="0"/>
+      <stop offset="0.16" stop-color="#D4AF37" stop-opacity="0.55"/>
+      <stop offset="0.5"  stop-color="#9A7520" stop-opacity="0.9"/>
+      <stop offset="0.84" stop-color="#D4AF37" stop-opacity="0.55"/>
+      <stop offset="1"    stop-color="#D4AF37" stop-opacity="0"/>
+    </linearGradient>
+
+    <linearGradient id="sheen" x1="0" y1="0" x2="0.16" y2="0">
+      <stop offset="0"    stop-color="#FFF8DC" stop-opacity="0"/>
+      <stop offset="0.5"  stop-color="#FFFDF2" stop-opacity="1"/>
+      <stop offset="1"    stop-color="#FFF8DC" stop-opacity="0"/>
+      <animateTransform attributeName="gradientTransform" type="translate"
+                        values="-1.4 0; 1.4 0" dur="5.5s" repeatCount="indefinite"/>
+    </linearGradient>
+
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"   stop-color="#FBEBAE"/>
+      <stop offset="0.45" stop-color="#D4AF37"/>
+      <stop offset="1"   stop-color="#8C6A1F"/>
+    </linearGradient>
+
+    <radialGradient id="halo">
+      <stop offset="0"   stop-color="#D4AF37" stop-opacity="0.28"/>
+      <stop offset="1"   stop-color="#D4AF37" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- 主分隔线 -->
+  <rect x="60" y="23" width="1080" height="2" rx="1" fill="url(#rule)"/>
+  <rect x="60" y="23" width="1080" height="2" rx="1" fill="url(#sheen)" opacity="0.85"/>
+
+  <!-- 中央光晕 + 菱形 -->
+  <circle cx="600" cy="24" r="26" fill="url(#halo)"/>
+  <g transform="translate(600 24)">
+    <rect x="-8.5" y="-8.5" width="17" height="17" rx="2"
+          transform="rotate(45)" fill="url(#gold)"/>
+    <rect x="-8.5" y="-8.5" width="17" height="17" rx="2"
+          transform="rotate(45)" fill="none" stroke="#8C6A1F" stroke-opacity="0.45"/>
+    <rect x="-2.4" y="-2.4" width="4.8" height="4.8"
+          transform="rotate(45)" fill="#FFFDF2" opacity="0.9"/>
+  </g>
+
+  <!-- 两侧小菱形 -->
+  <g fill="url(#gold)" opacity="0.75">
+    <rect x="-3.6" y="-3.6" width="7.2" height="7.2" rx="1" transform="translate(534 24) rotate(45)"/>
+    <rect x="-3.6" y="-3.6" width="7.2" height="7.2" rx="1" transform="translate(666 24) rotate(45)"/>
+  </g>
+
+  <!-- 星芒 -->
+  <g fill="#E8CD6A">
+    <path transform="translate(268 24) scale(0.85)"
+          d="M0,-9 L1.5,-1.5 L9,0 L1.5,1.5 L0,9 L-1.5,1.5 L-9,0 L-1.5,-1.5 Z">
+      <animate attributeName="opacity" values="0.25;0.95;0.25" dur="4s" repeatCount="indefinite"/>
+    </path>
+    <path transform="translate(932 24) scale(0.6)"
+          d="M0,-9 L1.5,-1.5 L9,0 L1.5,1.5 L0,9 L-1.5,1.5 L-9,0 L-1.5,-1.5 Z">
+      <animate attributeName="opacity" values="0.9;0.2;0.9" dur="4s" repeatCount="indefinite"/>
+    </path>
+    <path transform="translate(392 24) scale(0.42)"
+          d="M0,-9 L1.5,-1.5 L9,0 L1.5,1.5 L0,9 L-1.5,1.5 L-9,0 L-1.5,-1.5 Z">
+      <animate attributeName="opacity" values="0.3;0.8;0.3" dur="5s" repeatCount="indefinite"/>
+    </path>
+    <path transform="translate(812 24) scale(0.42)"
+          d="M0,-9 L1.5,-1.5 L9,0 L1.5,1.5 L0,9 L-1.5,1.5 L-9,0 L-1.5,-1.5 Z">
+      <animate attributeName="opacity" values="0.75;0.25;0.75" dur="5s" repeatCount="indefinite"/>
+    </path>
+  </g>
+</svg>
