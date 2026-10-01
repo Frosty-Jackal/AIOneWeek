@@ -82,6 +82,22 @@ async function until(fn, { timeout = 2000, label = "条件" } = {}) {
  * 起一个页面：真实 html + 真实 app.js，fetch 由调用方给定路由表。
  * 返回 { window, document, $, calls, click }。
  */
+/**
+ * 等 jsdom 自己那次 `DOMContentLoaded` 走完，再让调用方 eval app.js。
+ *
+ * 不等的话，下面手动 dispatch 的那次会和 jsdom 自然触发的这次各跑一遍 `boot()` ——
+ * 监听器被绑两次，一次点击发两个请求。计数类断言（「正好 1 次」）于是只在时序
+ * 刚好时才成立：那种绿是运气，不是证明。等到之后再 eval，监听器晚于自然事件注册，
+ * 只有手动那一次能触发它，与真实浏览器（`<script>` 在事件之前跑完）一致。
+ */
+function waitForNaturalDomReady(window) {
+  const doc = window.document;
+  if (doc.readyState !== "loading") return Promise.resolve();
+  return new Promise((resolve) => {
+    doc.addEventListener("DOMContentLoaded", resolve, { once: true });
+  });
+}
+
 async function openPage(JSDOM, htmlFile, routes) {
   const dom = new JSDOM(readStatic(htmlFile), {
     url: "http://localhost:8000/",
@@ -90,6 +106,8 @@ async function openPage(JSDOM, htmlFile, routes) {
   });
   const { window } = dom;
   const calls = [];
+
+  await waitForNaturalDomReady(window);
 
   // jsdom 未实现的浏览器 API：补成可断言的桩
   window.alert = (m) => calls.push({ path: "alert", body: m });
@@ -485,6 +503,111 @@ async function testStatusVerbCopy(JSDOM) {
   eq("static/ 下「已展示」零命中", hits.join(","), "");
 }
 
+/**
+ * §9 —— 发码时暂存邮箱，改过邮箱再点注册就先在本地拦下。
+ *
+ * 这里断两件事：提示文案对，**且没有发出注册请求**。只断文案的话，
+ * 「压根没发请求」与「发了但失败了」分不开 —— 所以 `/api/auth/register`
+ * 也声明一条 201 路由，让「发出去了」在 calls 里看得见。
+ */
+async function testRegisterStagedEmailBlocksChangedEmail(JSDOM) {
+  console.log("\n§9 改邮箱后点注册：本地拦下，零注册请求");
+  const page = await openPage(JSDOM, "index.html", {
+    "/api/auth/me": { status: 401, body: { detail: "未登录" } },
+    "/api/auth/send-code": { status: 204, body: null },
+    "/api/auth/register": { status: 201, body: { email: "b@example.com", role: "user" } },
+  });
+
+  page.click('[data-goto="view-register"]');
+  await sleep(0);
+
+  page.$("#reg-email").value = "a@example.com";
+  page.click("#btn-send-reg");
+  await until(() => page.$("#auth-msg").textContent.includes("验证码已发送"), {
+    label: "发码成功提示（sendCode 是 async，不等它断言会跑在暂存之前）",
+  });
+
+  // 用户改主意，换成另一个邮箱 —— 暂存里还是 a
+  page.$("#reg-email").value = "b@example.com";
+  page.$("#reg-code").value = "1234";
+  page.$("#reg-password").value = "1234";
+  page.click("#btn-register");
+  await sleep(0);
+
+  eq("提示语", page.$("#auth-msg").textContent, "邮箱已变更，请重新获取验证码");
+  eq(
+    "零 /api/auth/register 请求",
+    page.calls.filter((c) => c.path === "/api/auth/register").length,
+    0,
+  );
+}
+
+async function testRegisterUnchangedEmailStillGoesThrough(JSDOM) {
+  console.log("\n§9 反向：没改邮箱，注册照常发出");
+  const page = await openPage(JSDOM, "index.html", {
+    "/api/auth/me": { status: 401, body: { detail: "未登录" } },
+    "/api/auth/send-code": { status: 204, body: null },
+    "/api/auth/register": { status: 201, body: { email: "a@example.com", role: "user" } },
+  });
+
+  page.click('[data-goto="view-register"]');
+  await sleep(0);
+
+  page.$("#reg-email").value = "a@example.com";
+  page.click("#btn-send-reg");
+  await until(() => page.$("#auth-msg").textContent.includes("验证码已发送"), {
+    label: "发码成功提示",
+  });
+
+  page.$("#reg-code").value = "1234";
+  page.$("#reg-password").value = "1234";
+  page.click("#btn-register");
+  // 等提示而不是等 calls：calls 是在 fetch 被调用的瞬间推进去的，此刻
+  // await apiJson 还没返回，「注册成功」那句还没写进 #auth-msg。
+  await until(() => page.$("#auth-msg").textContent === "注册成功，请登录", {
+    label: "注册成功提示",
+  });
+
+  const calls = page.calls.filter((c) => c.path === "/api/auth/register");
+  eq("注册请求次数", calls.length, 1);
+  eq("注册请求里的邮箱", calls[0].body.email, "a@example.com");
+}
+
+/**
+ * §9.3 第 1 条：失败方向必须是「放行」。
+ *
+ * 刷新过页面的人（码是在别处发的）没有暂存 —— 此时本地无从判断，若判成
+ * 「不一致就拦死」，一个完全合法的注册会寸步难行。这就是前端暂存唯一可能
+ * 造成的真实伤害，值得一条用例钉住。
+ */
+async function testRegisterWithoutStagedEmailIsNotBlocked(JSDOM) {
+  console.log("\n§9 无暂存（刷新过页面）：不拦，交服务端裁决");
+  const page = await openPage(JSDOM, "index.html", {
+    "/api/auth/me": { status: 401, body: { detail: "未登录" } },
+    "/api/auth/register": { status: 201, body: { email: "a@example.com", role: "user" } },
+  });
+
+  page.click('[data-goto="view-register"]');
+  await sleep(0);
+
+  // 全程没点过「发送验证码」—— 暂存是 null
+  page.$("#reg-email").value = "a@example.com";
+  page.$("#reg-code").value = "1234";
+  page.$("#reg-password").value = "1234";
+  page.click("#btn-register");
+  // 先等提示落地：calls 是 fetch 被调用的瞬间推进去的，此刻 Promise 还没回。
+  // 等到「非空」而不是等到注册请求出现 —— 两条分支都会写 #auth-msg，所以
+  // 「被误拦」在这里是一条干净的 ✗，而不是 until 超时抛异常把整个 runner 掀翻。
+  await until(() => page.$("#auth-msg").textContent !== "", { label: "注册结果提示" });
+
+  eq("注册成功提示", page.$("#auth-msg").textContent, "注册成功，请登录");
+  eq(
+    "注册请求已发出",
+    page.calls.filter((c) => c.path === "/api/auth/register").length,
+    1,
+  );
+}
+
 async function testRefLinkRendering(JSDOM) {
   console.log("\n§9.3 第 3 层 参考链接渲染");
   const page = await openPage(JSDOM, "index.html", {
@@ -715,6 +838,9 @@ await testCollectedNowVisibility(JSDOM);
 await testSingleDisclaimer(JSDOM);
 await testHelpDialog(JSDOM);
 await testStatusVerbCopy(JSDOM);
+await testRegisterStagedEmailBlocksChangedEmail(JSDOM);
+await testRegisterUnchangedEmailStillGoesThrough(JSDOM);
+await testRegisterWithoutStagedEmailIsNotBlocked(JSDOM);
 await testRefLinkRendering(JSDOM);
 await testAdminPasswordButton(JSDOM);
 await testSupportEmailOnAllViews(JSDOM);

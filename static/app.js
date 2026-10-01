@@ -19,6 +19,9 @@
   /* 已评分的日期：当次会话内不再重复弹出评分条（§7.1） */
   const ratedDates = new Set();
   let pendingAfterLogin = null;
+  /* 发码时用的邮箱。注册前拿它比对，改过邮箱就不发请求，直接提示重发码（Spec3 §9）。
+     只做早提示、不做判据：为 null（刷新过页面）时跳过本地判断，交给服务端裁决。 */
+  let regCodeEmail = null;
 
   // ---------- 基础请求 ----------
 
@@ -143,6 +146,8 @@
     btn.disabled = true;
     try {
       await apiJson("/api/auth/send-code", { method: "POST", body: { email, purpose } });
+      // 只在发送成功之后暂存：没发出去的码不该产生「已暂存」的假象
+      if (purpose === "register") regCodeEmail = email;
       msg("验证码已发送，请查收邮件", "good");
       countdown(btn);
     } catch (err) {
@@ -206,6 +211,12 @@
       const code = $("#reg-code").value.trim();
       const password = $("#reg-password").value;
       if (!email || !code || !password) return msg("请填写全部字段", "bad");
+      // 邮箱变了，手里这串码属于另一个邮箱 —— 与其让服务端回一句「验证码错误或已过期」
+      // （码根本没错），不如在这里说清发生了什么（Spec3 §9.2）。
+      // 暂存丢了就跳过本地判断、照常发请求：拦死合法注册比漏拦坏得多（§9.3 第 1 条）。
+      if (regCodeEmail && email !== regCodeEmail) {
+        return msg("邮箱已变更，请重新获取验证码", "bad");
+      }
       try {
         await apiJson("/api/auth/register", { method: "POST", body: { email, code, password } });
         msg("注册成功，请登录", "good");
