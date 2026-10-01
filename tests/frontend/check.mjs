@@ -291,6 +291,90 @@ async function testCollectedNowVisibility(JSDOM) {
   );
 }
 
+const DISCLAIMER = "所有条目均为 AI 生成，请核验参考链接。";
+
+// 拼出来，否则本文件自己就会命中下面那条全仓库零命中扫描
+const DEAD_CLASS = "day-" + "foot";
+
+// 7 天各一条，用来暴露「一天一份脚注」的重复
+const WEEK_FULL = {
+  body: {
+    range: { from: "2026-09-23", to: "2026-09-29" },
+    days: [
+      "2026-09-29",
+      "2026-09-28",
+      "2026-09-27",
+      "2026-09-26",
+      "2026-09-25",
+      "2026-09-24",
+      "2026-09-23",
+    ].map((date) => ({
+      date,
+      status: "success",
+      items: [
+        {
+          tech_name: `T-${date}`,
+          tech_content: "内容",
+          innovation: "创新",
+          scenarios: ["a", "b", "c"],
+          publish_date: date,
+          ref_link: `https://example.com/${date}`,
+        },
+      ],
+    })),
+    collected_now: [],
+  },
+};
+
+async function testSingleDisclaimer(JSDOM) {
+  console.log("\n§4 免责声明全页只有一份");
+  const views = [
+    ["index.html", USER, {}],
+    [
+      "admin.html",
+      ADMIN,
+      {
+        "/api/admin/users": { body: [] },
+        "/api/admin/sites": { body: [] },
+        "/api/admin/eval-set": { body: [] },
+      },
+    ],
+  ];
+
+  for (const [file, me, extra] of views) {
+    const page = await openPage(JSDOM, file, {
+      "/api/auth/me": { body: me },
+      "/api/weekly": WEEK_FULL,
+      ...extra,
+    });
+    await sleep(0);
+    page.click("#btn-weekly");
+    await until(() => page.$("#hero-status").textContent.startsWith("已展示"), {
+      label: `${file} 状态行`,
+    });
+
+    eq(`${file}: 7 天卡片已渲染`, page.document.querySelectorAll(".day").length, 7);
+    eq(
+      `${file}: 无逐日脚注`,
+      page.document.querySelectorAll(`.${DEAD_CLASS}`).length,
+      0,
+      "一天一份脚注，7 天就重复 7 次",
+    );
+    eq(`${file}: 页面底部声明只有一份`, page.document.querySelectorAll(".foot").length, 1);
+    eq(`${file}: 声明措辞不变`, page.$(".foot").textContent.trim(), DISCLAIMER);
+  }
+
+  // §4.4：零命中要覆盖 style.css 与 test_theme.mjs，不只是 app.js
+  const hits = ["static", "tests/frontend"].flatMap((dir) =>
+    fs
+      .readdirSync(path.join(ROOT, dir))
+      .filter((f) => /\.(css|js|mjs|html)$/.test(f))
+      .filter((f) => fs.readFileSync(path.join(ROOT, dir, f), "utf8").includes(DEAD_CLASS))
+      .map((f) => `${dir}/${f}`),
+  );
+  eq("逐日脚注的类名全仓库零命中", hits.join(","), "");
+}
+
 async function testRefLinkRendering(JSDOM) {
   console.log("\n§9.3 第 3 层 参考链接渲染");
   const page = await openPage(JSDOM, "index.html", {
@@ -518,6 +602,7 @@ await testResumeAfterLogin(JSDOM);
 await testExpiredSessionStopsTicker(JSDOM);
 await testWaitTickerText(JSDOM);
 await testCollectedNowVisibility(JSDOM);
+await testSingleDisclaimer(JSDOM);
 await testRefLinkRendering(JSDOM);
 await testAdminPasswordButton(JSDOM);
 await testSupportEmailOnAllViews(JSDOM);

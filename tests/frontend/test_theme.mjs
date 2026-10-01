@@ -433,7 +433,6 @@ function testComponents() {
 
   // 旧的冷灰脚注必须换掉（#97a0ad 在白底只有 ≈2.6:1）
   ok("无残留冷灰 #97a0ad", !/#97a0ad/i.test(CSS));
-  check(".day-foot", { color: "var(--ink-3)" });
 
   // §6 的客服邮箱样式
   check(".dialog-foot", {

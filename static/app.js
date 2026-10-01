@@ -263,7 +263,6 @@
         card.append(el("p", "day-note muted", DAY_STATUS[day.status] || "该日暂无数据"));
       }
 
-      card.append(el("p", "day-foot", "AI 生成，请核验参考链接"));
       box.append(card);
       if (day.status === "success" && day.items.length) box.append(renderRatingBar(day.date));
     }
