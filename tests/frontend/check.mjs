@@ -608,6 +608,54 @@ async function testRegisterWithoutStagedEmailIsNotBlocked(JSDOM) {
   );
 }
 
+/**
+ * §9 —— 「只在发送成功之后暂存」这条纪律也得有测试看着。
+ *
+ * 前三条用例走的都是发码成功的路径，所以把赋值挪到 `await` 之前它们全绿。
+ * 这条走失败路径：发码 500 时若照样把 a 暂存了，用户换个邮箱 b 再注册就会被
+ * 本地拦下「邮箱已变更，请重新获取验证码」—— 而 b 的码可能刚从别处要来。
+ */
+async function testFailedSendDoesNotStageTheEmail(JSDOM) {
+  console.log("\n§9 发码失败：不暂存，改邮箱照常注册");
+  const page = await openPage(JSDOM, "index.html", {
+    "/api/auth/me": { status: 401, body: { detail: "未登录" } },
+    "/api/auth/send-code": { status: 500, body: { detail: "验证码发送失败，请稍后重试" } },
+    "/api/auth/register": { status: 201, body: { email: "b@example.com", role: "user" } },
+  });
+
+  page.click('[data-goto="view-register"]');
+  await sleep(0);
+
+  page.$("#reg-email").value = "a@example.com";
+  page.click("#btn-send-reg");
+  // 等失败提示落地：证明那次 async 的 sendCode 已经跑完 —— 暂存若写错了，
+  // 此刻也已经写进去了。
+  await until(() => page.$("#auth-msg").textContent.includes("失败"), {
+    label: "发码失败提示",
+  });
+
+  // 换邮箱：a 的码压根没发出去，暂存里不该有 a
+  page.$("#reg-email").value = "b@example.com";
+  page.$("#reg-code").value = "1234";
+  page.$("#reg-password").value = "1234";
+  page.click("#btn-register");
+  // 这里不能等「非空」：上面那条发码失败提示还挂在 #auth-msg 上，非空是立刻就成立的，
+  // 断言会读到一个陈旧的值。等两个分支各自的那句话之一落地 —— 两边都不写就等于超时，
+  // 那时抛出来的是真问题。
+  await until(
+    () =>
+      ["注册成功，请登录", "邮箱已变更，请重新获取验证码"].includes(
+        page.$("#auth-msg").textContent,
+      ),
+    { label: "注册结果提示" },
+  );
+
+  eq("注册成功提示", page.$("#auth-msg").textContent, "注册成功，请登录");
+  const calls = page.calls.filter((c) => c.path === "/api/auth/register");
+  eq("注册请求次数", calls.length, 1);
+  eq("注册请求里的邮箱", calls[0].body.email, "b@example.com");
+}
+
 async function testRefLinkRendering(JSDOM) {
   console.log("\n§9.3 第 3 层 参考链接渲染");
   const page = await openPage(JSDOM, "index.html", {
@@ -841,6 +889,7 @@ await testStatusVerbCopy(JSDOM);
 await testRegisterStagedEmailBlocksChangedEmail(JSDOM);
 await testRegisterUnchangedEmailStillGoesThrough(JSDOM);
 await testRegisterWithoutStagedEmailIsNotBlocked(JSDOM);
+await testFailedSendDoesNotStageTheEmail(JSDOM);
 await testRefLinkRendering(JSDOM);
 await testAdminPasswordButton(JSDOM);
 await testSupportEmailOnAllViews(JSDOM);

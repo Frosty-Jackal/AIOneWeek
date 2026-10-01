@@ -219,6 +219,19 @@ class AuthRulesTest(_AuthCase, unittest.TestCase):
 
     # --- 用例 5 ---
 
+    def test_already_used_code_is_rejected(self):
+        """`used == 0` 本身就是查询条件之一 —— 直接落一行用过的码来钉住它。
+
+        只靠「同邮箱重注册撞 409」是证不到这条的：那种写法第二次会换一个邮箱，
+        于是拦下它的是 `email` 绑定，`used` 从查询里删掉也照样绿。
+        """
+        self._add_code(A, "1357", used=1)
+
+        resp = self._register(A, "1357")
+
+        self.assertEqual(resp.status_code, 400, resp.text)
+        self.assertEqual(self._user_count(), 0)
+
     def test_expired_code_is_rejected(self):
         self._add_code(A, "1357", expire_seconds=-1)
 
@@ -281,6 +294,28 @@ class RegisterNoticeTest(_AuthCase, unittest.TestCase):
         self.assertEqual(
             mask(resp.json()), mask(ok.json()), "响应体必须与成功时逐字一致"
         )
+
+    def test_non_mail_error_does_not_block_registration(self):
+        """§10.5 的规则是「发信失败只记日志」，不是「只对 MailError 网开一面」。
+
+        `_send()` 把 SMTP 异常统一转成 MailError，但 try 之外还有一段 MIME 组装
+        （`Header` / `MIMEText`），那里的异常会原样逃出来。只 catch MailError 的话，
+        这种异常会让**已经提交**的注册返回 500 —— 用户以为自己没注册上，重试又撞
+        409「该邮箱已注册」，从此卡死在一个他确实拥有的账号外面。
+        """
+        self._add_code(A, "1357")
+        self.notify.fail = ValueError("MIME 组装炸了")
+
+        # 默认的 TestClient 把服务端异常原样抛出来，看到的是 traceback，不是
+        # 「用户实际收到什么」。这里要断的正是后者。
+        client = TestClient(app, raise_server_exceptions=False)
+        self.addCleanup(client.close)
+        resp = client.post(
+            "/api/auth/register", json={"email": A, "code": "1357", "password": "1234"}
+        )
+
+        self.assertEqual(resp.status_code, 201, resp.text)
+        self.assertEqual(self._user_count(), 1, "注册必须照常落库")
 
     def test_empty_recipient_turns_the_notification_off(self):
         """`REGISTER_NOTIFY_EMAIL=` → 连函数都不调用（§10.4）。"""

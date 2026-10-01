@@ -140,10 +140,15 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)) -> MeOut:
     # 失败只记日志、绝不回滚已提交的注册。这与 /send-code 的处理**刻意相反**
     # （那里 SMTP 失败回 502 且不落库）：那封信是用户要的东西本身，这封是旁路信息，
     # 用户根本不知道有它 —— 为它报错只会让注册成功的人以为自己没注册上（§10.5）。
+    #
+    # 这里 catch Exception 而不是 MailError：`_send()` 确实把 SMTP 异常统一转成了
+    # MailError，但 MIME 组装那段在它的 try 之外，异常会原样逃出来。而用户此刻
+    # **已经建好了**，此时回 500 等于告诉他注册失败，重试又撞 409「该邮箱已注册」。
+    # §10.5 的规则是「发信失败只记日志」，收窄到 MailError 就漏掉了这一半。
     if settings.register_notify_email:
         try:
             send_register_notice(email)
-        except MailError as exc:
+        except Exception as exc:  # noqa: BLE001 —— 见上：任何通知失败都不许影响注册
             logger.warning("新用户注册通知发送失败：%s", exc)
 
     # 注册成功不自动登录（§6.1 步骤 5）
