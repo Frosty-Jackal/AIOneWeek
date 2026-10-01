@@ -15,6 +15,7 @@
     <span class="tag">管理端</span>
   </div>
   <div class="who">
+    <button class="help-btn" id="btn-help">新手帮助</button>
     <span id="whoami"></span>
     <a class="link" href="/">用户端</a>
     <button class="link" id="btn-logout">退出</button>
@@ -102,6 +103,20 @@
   </div>
   <p class="dialog-msg" id="auth-msg"></p>
   <p class="dialog-foot">客服邮箱：<a href="mailto:frostyj@qq.com">frostyj@qq.com</a></p>
+</dialog>
+
+<!-- 新手帮助：内容全静态，点开即读。两端共用同一份文案（帮助描述的正是两端共有的 #btn-weekly） -->
+<dialog id="help-dialog" class="dialog help-dialog">
+  <form method="dialog" class="dialog-close-form"><button class="x" aria-label="关闭">×</button></form>
+
+  <img class="help-logo" src="/static/logo.png" alt="AIOneWeek">
+  <h2>AIOneWeek——让你知道一周内的 AI 前沿技术</h2>
+
+  <div class="help-body">
+    <p>您点击中间“查看当周内 AI 前沿技术”后，后台会帮您实时查询当周内 AI 前沿技术，并展示在主界面供您阅读！</p>
+    <p>每一条前沿 AI 技术条目含有技术内容和创新点，这方便您在阅读 AI 新闻的时候能够快速掌握技术创新点，方便您快速掌握技术要点，以便您深入学习！</p>
+    <p>此外，每一条目还附带应用场景，能够让您了解这些前沿 AI 技术会如何赋能工作与生活，启发您将人类智慧结晶带出实验室，走向应用！</p>
+  </div>
 </dialog>
 
 <script src="/static/app.js"></script>

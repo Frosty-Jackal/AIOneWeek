@@ -619,8 +619,16 @@
 
   // ---------- 启动 ----------
 
+  /* 新手帮助：内容全静态，点开即读；关闭交给 <dialog> 的原生 Esc 与 ×（Spec3 §6） */
+  function wireHelp() {
+    const dlg = $("#help-dialog");
+    if (!dlg) return;
+    $("#btn-help")?.addEventListener("click", () => dlg.showModal());
+  }
+
   async function boot() {
     wireAuthDialog();
+    wireHelp();
     wireTabs();
     await loadMe();
 

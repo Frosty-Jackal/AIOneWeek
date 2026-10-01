@@ -375,6 +375,87 @@ async function testSingleDisclaimer(JSDOM) {
   eq("逐日脚注的类名全仓库零命中", hits.join(","), "");
 }
 
+// §6.4：用户原文逐字保留，只做半角引号 → 中文双引号、拉丁字符两侧留空格两处排版归一
+const HELP_TITLE = "AIOneWeek——让你知道一周内的 AI 前沿技术";
+const HELP_PARAS = [
+  "您点击中间“查看当周内 AI 前沿技术”后，后台会帮您实时查询当周内 AI 前沿技术，并展示在主界面供您阅读！",
+  "每一条前沿 AI 技术条目含有技术内容和创新点，这方便您在阅读 AI 新闻的时候能够快速掌握技术创新点，方便您快速掌握技术要点，以便您深入学习！",
+  "此外，每一条目还附带应用场景，能够让您了解这些前沿 AI 技术会如何赋能工作与生活，启发您将人类智慧结晶带出实验室，走向应用！",
+];
+
+async function testHelpDialog(JSDOM) {
+  console.log("\n§6 顶栏「新手帮助」按钮与帮助弹窗");
+  for (const [file, me] of [
+    ["index.html", { status: 401, body: { detail: "未登录" } }],
+    ["admin.html", { body: ADMIN }],
+  ]) {
+    const page = await openPage(JSDOM, file, { "/api/auth/me": me });
+    await sleep(0);
+
+    const btn = page.$(".who .help-btn");
+    ok(`${file}: .who 内有「新手帮助」按钮`, btn !== null);
+    if (!btn) continue;
+    eq(`${file}: 按钮文案`, btn.textContent.trim(), "新手帮助");
+    ok(
+      `${file}: 按钮在邮箱展示之前`,
+      btn.nextElementSibling?.id === "whoami",
+      `next=${btn.nextElementSibling?.id || btn.nextElementSibling?.className}`,
+    );
+
+    eq(`${file}: 初始不打开`, page.$("#help-dialog").hasAttribute("open"), false);
+    btn.click();
+    eq(`${file}: 点击后打开`, page.$("#help-dialog").hasAttribute("open"), true);
+
+    const dlg = page.$("#help-dialog");
+    ok(`${file}: 复用 .dialog 金白样式`, dlg.classList.contains("dialog"), dlg.className);
+    ok(`${file}: 加 help-dialog 修饰类放宽宽度`, dlg.classList.contains("help-dialog"));
+    eq(`${file}: 居中 logo`, page.$("#help-dialog .help-logo").getAttribute("src"), "/static/logo.png");
+    eq(`${file}: 标题逐字一致`, page.$("#help-dialog h2").textContent, HELP_TITLE);
+    // eq 用 ===，比数组永远为假 —— 拼成字符串再比
+    eq(
+      `${file}: 三段说明逐字一致`,
+      [...page.document.querySelectorAll("#help-dialog .help-body p")]
+        .map((p) => p.textContent)
+        .join("\n"),
+      HELP_PARAS.join("\n"),
+    );
+    // Esc 与右上角 × 都是 <dialog> 原生行为：× 在 <form method="dialog"> 里，Esc 由浏览器派发。
+    // jsdom 两者都不实现，断言它们等于断言 jsdom —— 只能断言结构在，行为留给真机。
+    ok(
+      `${file}: × 在 method=dialog 的表单里`,
+      page.$("#help-dialog .dialog-close-form")?.getAttribute("method") === "dialog",
+    );
+  }
+
+  // §6.1「未登录时它就是最右」：只在用户端未登录这一种情形下成立 —— 其后除空的 #whoami
+  // 就是两个 hidden 项。管理端登录后其后还有「用户端 / 退出」，那时它在右组左端而非最右。
+  const anon = await openPage(JSDOM, "index.html", {
+    "/api/auth/me": { status: 401, body: { detail: "未登录" } },
+  });
+  await sleep(0);
+  const kids = [...anon.document.querySelectorAll(".who > *")];
+  const btnIdx = kids.indexOf(anon.$(".who .help-btn"));
+  ok(
+    "index.html: 未登录时其后无可见内容",
+    kids.slice(btnIdx + 1).every((n) => n.hidden || n.textContent.trim() === ""),
+    kids.slice(btnIdx + 1).map((n) => `${n.id || n.tagName}${n.hidden ? "(hidden)" : ""}`).join(","),
+  );
+
+  // §6.6：不引入任何新依赖
+  const SKIP = ["cdn", "unpkg", "fonts.googleapis"];
+  const hits = fs
+    .readdirSync(path.join(ROOT, "static"))
+    .filter((f) => {
+      try {
+        const text = readStatic(f);
+        return SKIP.some((needle) => text.includes(needle));
+      } catch {
+        return false;
+      }
+    });
+  eq("static/ 下无外部 CDN 引用", hits.join(","), "");
+}
+
 async function testStatusVerbCopy(JSDOM) {
   console.log("\n§5 状态行动词");
   const page = await openPage(JSDOM, "index.html", {
@@ -632,6 +713,7 @@ await testExpiredSessionStopsTicker(JSDOM);
 await testWaitTickerText(JSDOM);
 await testCollectedNowVisibility(JSDOM);
 await testSingleDisclaimer(JSDOM);
+await testHelpDialog(JSDOM);
 await testStatusVerbCopy(JSDOM);
 await testRefLinkRendering(JSDOM);
 await testAdminPasswordButton(JSDOM);

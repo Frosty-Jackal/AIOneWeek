@@ -169,6 +169,20 @@ button.primary:hover { background: var(--gold-deep); border-color: var(--gold-de
 button.primary:disabled { opacity: .55; cursor: default; }
 button.primary.big { font-size: 17px; padding: 13px 30px; }
 
+/* 顶栏「新手帮助」：与主按钮同形（圆角矩形、金底白字），只是更小（Spec3 §6.2）。
+   hover 只许变深 —— 与 button.primary 同一条铁律：变浅会让金底白字跌穿 4.5:1。
+   做成金底而非 ghost：.who 里已有两个纯文字链接，ghost 会糊在一起看不出是按钮。 */
+.help-btn {
+  background: var(--gold);
+  color: var(--gold-ink);
+  border: 1px solid var(--gold);
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-size: 13px;
+}
+.help-btn:hover { background: var(--gold-deep); border-color: var(--gold-deep); }
+.help-btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
 button.ghost {
   background: var(--panel);
   border: 1px solid var(--line-2);
@@ -330,6 +344,11 @@ td.ops { white-space: nowrap; }
   box-shadow: 0 18px 48px rgba(60,48,20,.18);
 }
 .dialog::backdrop { background: rgba(40,33,16,.32); }
+
+/* 弹窗打开时锁住页面滚动（Spec3 §6.6）。showModal() 只挡指针事件，不锁滚动 ——
+   少了这条，滚轮划过遮罩会带着底下的页面一起动。写在 body 上，两个弹窗一起生效；
+   老浏览器不认 :has() 就整条忽略，退化成本条加入前的行为，不会更糟。 */
+body:has(dialog[open]) { overflow: hidden; }
 .dialog-close-form { margin: 0; }
 .dialog .x {
   position: absolute;
@@ -385,6 +404,14 @@ input:focus,
   box-shadow: 0 0 0 3px var(--gold-soft);
   outline: none;
 }
+
+/* 新手帮助弹窗：比登录弹窗宽，正文左对齐；窄屏下正文区自己滚（Spec3 §6.3） */
+.help-dialog { width: min(560px, calc(100vw - 32px)); }
+.help-dialog .help-logo { display: block; height: 56px; width: auto; margin: 4px auto 16px; }
+.help-dialog h2 { text-align: center; font-size: 17px; line-height: 1.5; margin: 0 0 18px; }
+.help-dialog .help-body { max-height: 60vh; overflow-y: auto; }
+.help-dialog .help-body p { margin: 0 0 12px; font-size: 14px; line-height: 1.75; color: var(--ink); }
+.help-dialog .help-body p:last-child { margin-bottom: 0; }
 
 /* ---------- 页脚 ---------- */
 

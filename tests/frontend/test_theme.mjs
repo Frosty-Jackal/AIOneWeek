@@ -347,6 +347,26 @@ function testComponents() {
   });
   ok(".link:hover 仍有下划线", declsOf(".link:hover")["text-decoration"] === "underline");
 
+  // §6.2 顶栏「新手帮助」：形状同主按钮、大小不同
+  check(".help-btn", {
+    background: "var(--gold)",
+    color: "var(--gold-ink)",
+    border: "1px solid var(--gold)",
+  });
+  eq(
+    ".help-btn 圆角与主按钮同值",
+    declsOf(".help-btn")["border-radius"],
+    declsOf("button.primary")["border-radius"],
+  );
+  ok(
+    ".help-btn 明显小于主按钮",
+    parseFloat(declsOf(".help-btn")["font-size"]) < parseFloat(declsOf("button.primary.big")["font-size"]),
+    `.help-btn=${declsOf(".help-btn")["font-size"]} big=${declsOf("button.primary.big")["font-size"]}`,
+  );
+  // 金底白字 hover 只能变深：变浅会跌穿 4.5:1（Spec2 §5.3）
+  check(".help-btn:hover", { background: "var(--gold-deep)", "border-color": "var(--gold-deep)" });
+  ok(".help-btn 有可见焦点环", /\d/.test(declsOf(".help-btn:focus-visible").outline || ""));
+
   check("button.ghost", { background: "var(--panel)" });
   ok(
     "button.ghost 边框用 --line-2",
@@ -423,6 +443,29 @@ function testComponents() {
   );
   eq(".dialog::backdrop 遮罩", declsOf(".dialog::backdrop").background, "rgba(40,33,16,.32)");
 
+  // §6.3 新手帮助弹窗：比登录弹窗宽，正文左对齐，窄屏下正文区自滚
+  ok(
+    ".help-dialog 宽度是 min(...) 形式（窄视口不溢出）",
+    /^min\(560px, calc\(100vw - 32px\)\)$/.test(declsOf(".help-dialog").width || ""),
+    declsOf(".help-dialog").width,
+  );
+  ok(
+    ".help-logo 居中",
+    (declsOf(".help-dialog .help-logo").margin || "").includes("auto"),
+    declsOf(".help-dialog .help-logo").margin,
+  );
+  eq(".help-dialog h2 居中", declsOf(".help-dialog h2")["text-align"], "center");
+  const helpBody = declsOf(".help-dialog .help-body");
+  // §6.6「打开时页面背景变暗且不可滚动」：变暗靠 ::backdrop，不可滚动得自己锁。
+  // showModal() 只挡指针事件，不锁页面滚动；写在 body 上对两个弹窗一起生效。
+  eq("弹窗打开时锁住页面滚动", declsOf("body:has(dialog[open])").overflow, "hidden");
+
+  ok(
+    ".help-body 自滚",
+    helpBody["overflow-y"] === "auto" && helpBody["max-height"] === "60vh",
+    `overflow-y=${helpBody["overflow-y"]} max-height=${helpBody["max-height"]}`,
+  );
+
   check(".dialog .or", { color: "var(--ink-3)" });
   check(".foot", {
     color: "var(--ink-3)",
@@ -484,6 +527,42 @@ function testMarkup() {
     );
     const dialog = html.slice(html.indexOf('<dialog id="auth-dialog"'));
     void dialog;
+  }
+
+  // §6.1 顶栏「新手帮助」按钮：两端同位置，在 #whoami 之前
+  for (const file of ["index.html", "admin.html"]) {
+    const html = read(file);
+    const who = /<div class="who">([\s\S]*?)<\/div>/.exec(html);
+    ok(`${file}: 有 .who`, !!who, html.includes('class="who"') ? "" : "未找到 .who");
+    const inner = who ? who[1] : "";
+    ok(
+      `${file}: .who 内有新手帮助按钮`,
+      /<button class="help-btn" id="btn-help">新手帮助<\/button>/.test(inner),
+      inner.trim(),
+    );
+    ok(
+      `${file}: 按钮在 #whoami 之前`,
+      inner.indexOf('class="help-btn"') < inner.indexOf('id="whoami"'),
+      inner.trim(),
+    );
+  }
+
+  // §6.3 帮助弹窗的静态文案（逐字，见 Spec3 §6.4）
+  for (const file of ["index.html", "admin.html"]) {
+    const html = read(file);
+    ok(`${file}: 有 #help-dialog`, html.includes('<dialog id="help-dialog" class="dialog help-dialog">'));
+    const dlg = html.slice(html.indexOf('<dialog id="help-dialog"'));
+    ok(`${file}: 帮助 logo 引用 /static/logo.png`, /<img class="help-logo" src="\/static\/logo\.png"/.test(dlg));
+    ok(
+      `${file}: 帮助标题逐字一致`,
+      dlg.includes("<h2>AIOneWeek——让你知道一周内的 AI 前沿技术</h2>"),
+    );
+    ok(
+      `${file}: 帮助正文三段齐备`,
+      ["您点击中间", "每一条前沿 AI 技术条目含有技术内容和创新点", "此外，每一条目还附带应用场景"].every(
+        (lead) => dlg.includes(lead),
+      ),
+    );
   }
 
   const adminBrand = /<div class="brand">([\s\S]*?)<\/div>/.exec(read("admin.html"))[1];
