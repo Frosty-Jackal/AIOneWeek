@@ -411,7 +411,7 @@
           : "";
       const failed = data.days.filter((d) => d.status === "failed").length;
       const warn = failed ? `；${failed} 天采集失败，稍后重试即可自动补采` : "";
-      setStatus(`已展示 ${range}${extra}${warn}`, failed ? "" : "good");
+      setStatus(`已采集 ${range}${extra}${warn}`, failed ? "" : "good");
     } catch (err) {
       if (err.status === 401) {
         // 会话中途失效（例如在另一个标签页退出登录）：先停计时器、清掉残留的

@@ -192,8 +192,8 @@ async function testResumeAfterLogin(JSDOM) {
   eq("登录框自动关闭", page.$("#auth-dialog").hasAttribute("open"), false);
   eq("结果区已展示", page.$("#results").hidden, false);
   ok(
-    "状态行为「已展示 …」",
-    page.$("#hero-status").textContent.startsWith("已展示 2026-09-23 ~ 2026-09-29"),
+    "状态行为「已采集 …」",
+    page.$("#hero-status").textContent.startsWith("已采集 2026-09-23 ~ 2026-09-29"),
     page.$("#hero-status").textContent,
   );
   eq("无需再点一次按钮", page.weeklyCalls(), 1);
@@ -248,7 +248,7 @@ async function testWaitTickerText(JSDOM) {
   );
 
   release();
-  await until(() => page.$("#hero-status").textContent.startsWith("已展示"), { label: "采集返回" });
+  await until(() => page.$("#hero-status").textContent.startsWith("已采集"), { label: "采集返回" });
 }
 
 async function testCollectedNowVisibility(JSDOM) {
@@ -267,11 +267,11 @@ async function testCollectedNowVisibility(JSDOM) {
   });
   await sleep(0);
   user.click("#btn-weekly");
-  await until(() => user.$("#hero-status").textContent.startsWith("已展示"), { label: "用户端状态行" });
+  await until(() => user.$("#hero-status").textContent.startsWith("已采集"), { label: "用户端状态行" });
   eq(
-    "用户端状态行严格为「已展示 <起> ~ <止>」",
+    "用户端状态行严格为「已采集 <起> ~ <止>」",
     user.$("#hero-status").textContent,
-    "已展示 2026-09-23 ~ 2026-09-29",
+    "已采集 2026-09-23 ~ 2026-09-29",
   );
 
   const admin = await openPage(JSDOM, "admin.html", {
@@ -283,11 +283,11 @@ async function testCollectedNowVisibility(JSDOM) {
   });
   await sleep(0);
   admin.click("#btn-weekly");
-  await until(() => admin.$("#hero-status").textContent.startsWith("已展示"), { label: "管理端状态行" });
+  await until(() => admin.$("#hero-status").textContent.startsWith("已采集"), { label: "管理端状态行" });
   eq(
     "管理端仍保留补采天数",
     admin.$("#hero-status").textContent,
-    "已展示 2026-09-23 ~ 2026-09-29，本次补采 1 天",
+    "已采集 2026-09-23 ~ 2026-09-29，本次补采 1 天",
   );
 }
 
@@ -349,7 +349,7 @@ async function testSingleDisclaimer(JSDOM) {
     });
     await sleep(0);
     page.click("#btn-weekly");
-    await until(() => page.$("#hero-status").textContent.startsWith("已展示"), {
+    await until(() => page.$("#hero-status").textContent.startsWith("已采集"), {
       label: `${file} 状态行`,
     });
 
@@ -373,6 +373,35 @@ async function testSingleDisclaimer(JSDOM) {
       .map((f) => `${dir}/${f}`),
   );
   eq("逐日脚注的类名全仓库零命中", hits.join(","), "");
+}
+
+async function testStatusVerbCopy(JSDOM) {
+  console.log("\n§5 状态行动词");
+  const page = await openPage(JSDOM, "index.html", {
+    "/api/auth/me": { body: USER },
+    "/api/weekly": WEEK_OK,
+  });
+  await sleep(0);
+  page.click("#btn-weekly");
+  await until(() => page.$("#hero-status").textContent.startsWith("已采集"), {
+    label: "状态行动词",
+  });
+
+  eq("状态行严格等于「已采集 <起> ~ <止>」", page.$("#hero-status").textContent,
+    "已采集 2026-09-23 ~ 2026-09-29");
+  // statusLabel() 里 success 的药丸本来就是「已采集」，两处从此同词
+  eq("药丸与状态行同用「已采集」", page.$(".pill").textContent, "已采集");
+
+  const hits = fs
+    .readdirSync(path.join(ROOT, "static"))
+    .filter((f) => {
+      try {
+        return readStatic(f).includes("已展示");
+      } catch {
+        return false;
+      }
+    });
+  eq("static/ 下「已展示」零命中", hits.join(","), "");
 }
 
 async function testRefLinkRendering(JSDOM) {
@@ -603,6 +632,7 @@ await testExpiredSessionStopsTicker(JSDOM);
 await testWaitTickerText(JSDOM);
 await testCollectedNowVisibility(JSDOM);
 await testSingleDisclaimer(JSDOM);
+await testStatusVerbCopy(JSDOM);
 await testRefLinkRendering(JSDOM);
 await testAdminPasswordButton(JSDOM);
 await testSupportEmailOnAllViews(JSDOM);
