@@ -450,6 +450,41 @@ async function testSupportEmailOnAllViews(JSDOM) {
   }
 }
 
+async function testSubtitleCopy(JSDOM) {
+  console.log("\n§2 副标题：用户端改写，管理端不动");
+  const user = await openPage(JSDOM, "index.html", {
+    "/api/auth/me": { status: 401, body: { detail: "未登录" } },
+  });
+  await sleep(0);
+  eq(
+    "用户端副标题",
+    user.$(".hero .sub").textContent,
+    "前 7 天到底有哪些前沿 AI 技术？单击按钮立即查看！",
+  );
+
+  const admin = await openPage(JSDOM, "admin.html", {
+    "/api/auth/me": { body: ADMIN },
+    "/api/admin/users": { body: [] },
+    "/api/admin/sites": { body: [] },
+    "/api/admin/eval-set": { body: [] },
+  });
+  await sleep(0);
+  eq("管理端副标题不变", admin.$(".hero .sub").textContent, "滚动当周 7 天；缺口会自动串行补采");
+
+  // §2.3：旧文案零命中（覆盖 static/ 下每一个文本资产，不只 index.html）
+  const stale = "滚动当周 7 天，AI 前沿技术一处看完";
+  const hits = fs
+    .readdirSync(path.join(ROOT, "static"))
+    .filter((f) => {
+      try {
+        return readStatic(f).includes(stale);
+      } catch {
+        return false;
+      }
+    });
+  eq("旧副标题在 static/ 下零命中", hits.join(","), "");
+}
+
 async function testBrandLogo(JSDOM) {
   console.log("\n§5.5 顶栏 logo");
   for (const file of ["index.html", "admin.html"]) {
@@ -486,6 +521,7 @@ await testCollectedNowVisibility(JSDOM);
 await testRefLinkRendering(JSDOM);
 await testAdminPasswordButton(JSDOM);
 await testSupportEmailOnAllViews(JSDOM);
+await testSubtitleCopy(JSDOM);
 await testBrandLogo(JSDOM);
 
 console.log(`\n${passed} 项通过，${failures.length} 项失败`);
