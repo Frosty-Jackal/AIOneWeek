@@ -281,6 +281,19 @@ class EmptyReplyTest(unittest.TestCase):
         "经检索，9月29日没有创新或性能提升明显的技术。",
         "暂时没有符合条件的技术",
         "本期未发现符合条件的技术，检索 HuggingFace 与 arXiv 的当日更新均为学术方法。",
+        # Spec3 §8.4 —— 修「无」被误判成解析异常。模型一无所获时常先解释再道结论，
+        # 旧判据把「抱歉」当否决词、词表又漏了「未找到 / 未能找到 / 无法找到」，
+        # 整类写法落到 parse_failed；而 parse_failed 永不重采（§8.3），于是一直卡住。
+        "很抱歉，经过联网检索，2026年9月29日未检索到符合条件的AI前沿技术或模型。",
+        "抱歉，我无法找到今天发布的新AI技术。",
+        "很抱歉，今日（2026年9月29日）未发现符合条件的前沿AI技术或模型发布。",
+        "未找到符合条件的AI前沿技术。",
+        "未能找到今日符合条件的AI技术。",
+        "没有找到符合条件的 AI 前沿技术。",
+        "经检索，未搜索到今日发布的 AI 前沿技术。",
+        "很抱歉，经过联网检索，9月29日未检索到符合条件的技术。",
+        # §8.7 NOISE_RE：原集合漏了「」，这类回复在 PROSE_RE 一步就被挡掉
+        "经检索，未发现符合「有创新或性能明显提升」这一标准的技术。",
     )
 
     # 反向用例里每一条都「差点」被误判成 empty，逐条说明它守的是什么
@@ -293,6 +306,21 @@ class EmptyReplyTest(unittest.TestCase):
         ("failed to fetch results", "英文失败语"),
         ("【技术内容】输入条件，输出结果", "模板残片：有字段标记却没有【技术名】"),
         ("无【技术名】", "含【技术名】标记 → 交给正常解析分支，不能在这里短路"),
+        # Spec3 §8.4 新增的真·故障：都**没有**长成「否定词紧贴结果动词」的结构，
+        # 所以拿不到强信号那条豁免通道，仍由否决词拦下
+        ("无法访问该网站", "系统层面做不到，不是「检索完了发现没有」"),
+        ("检索过程中出现错误", "故障描述，含「检索」但不是否定式"),
+        ("系统异常：上游服务超时", "上游故障"),
+        ("no results were found but the request failed", "英文失败语"),
+    )
+
+    # 强信号 / 弱信号的分界（Spec3 §8.4）：两句都含「抱歉」，结果必须相反 ——
+    # 这正是本次要固化的区别。强信号只认「否定词紧贴结果动词」。
+    APOLOGY_PAIRS = (
+        ("抱歉，我无法完成这个请求。", False, "泛否定 + 做不到 → 仍是否决"),
+        ("很抱歉，经过联网检索，9月29日未检索到符合条件的技术。", True, "未+检索到 → 强信号"),
+        ("无法找到该技术的官方页面。", True, "无法+找到 → 强信号，先于否决词判定"),
+        ("无法完成今天的检索。", False, "无法 + 完成，不是结果动词 → 不走强信号"),
     )
 
     def test_natural_language_absence_is_empty(self):
@@ -306,6 +334,37 @@ class EmptyReplyTest(unittest.TestCase):
         for text, why in self.NOT_ABSENT:
             with self.subTest(text=text):
                 self.assertFalse(parser.is_empty_reply(text), f"误判成 empty：{why}")
+
+    def test_strong_and_weak_signals_are_separated(self):
+        """§8.4：强信号（否定词紧贴结果动词）不被礼貌语误伤，泛否定仍守否决词。"""
+        for text, expected, why in self.APOLOGY_PAIRS:
+            with self.subTest(text=text):
+                self.assertEqual(parser.is_empty_reply(text), expected, why)
+                self.assertEqual(
+                    parser.parse(text, 5)[0],
+                    parser.STATUS_EMPTY if expected else parser.STATUS_PARSE_FAILED,
+                    why,
+                )
+
+    def test_apology_words_are_no_longer_vetoes(self):
+        """回归：把「抱歉 / sorry」当否决词，等于把最常见的一种「无」判成解析异常。"""
+        for word in ("抱歉", "sorry"):
+            with self.subTest(word=word):
+                self.assertNotIn(word, parser.FAILURE_WORDS)
+
+    def test_failure_words_still_cover_real_failures(self):
+        """去掉道歉语不等于放宽：能力/系统层面的否认仍须在列。"""
+        for word in ("无法", "失败", "错误", "超时", "异常", "timeout", "error", "failed"):
+            with self.subTest(word=word):
+                self.assertIn(word, parser.FAILURE_WORDS)
+
+    def test_noise_re_strips_chinese_book_quotes(self):
+        """§8.7：漏了「」『』《》〈〉，含它们的回复在 PROSE_RE 一步就被挡掉。"""
+        for ch in "「」『』《》〈〉":
+            with self.subTest(ch=ch):
+                self.assertEqual(parser.NOISE_RE.sub("", ch), "")
+        core = parser.NOISE_RE.sub("", "经检索，未发现符合「创新」标准的技术。").lower()
+        self.assertTrue(parser.PROSE_RE.match(core), f"仍被 PROSE_RE 挡掉：{core}")
 
     def test_status_mapping_matches_the_predicate(self):
         """判定最终要落到 status 上，这里从 parse() 出口再确认一次。"""
