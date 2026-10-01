@@ -52,9 +52,16 @@ def today_str() -> str:
 
 
 def week_dates(today: str | None = None) -> list[str]:
-    """当天 + 前 6 天，共 7 天，倒序（Spec1 §6.2 步骤 1）。"""
+    """不含今天的前 7 天，倒序（Spec3 §3）。
+
+    窗口右端是**昨天**而非今天：今天的采集结果只可能在今天部分完成，
+    把它摆进展示窗口等于展示一份残缺快照（详见 Spec3 §3.4）。
+    """
     base = date_cls.fromisoformat(today) if today else date_cls.today()
-    return [(base - timedelta(days=i)).isoformat() for i in range(settings.week_window_days)]
+    return [
+        (base - timedelta(days=i)).isoformat()
+        for i in range(1, settings.week_window_days + 1)
+    ]
 
 
 def format_prompt_date(day: str) -> str:

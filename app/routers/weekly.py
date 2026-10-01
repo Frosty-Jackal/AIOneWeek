@@ -65,7 +65,7 @@ def weekly(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    dates = week_dates()  # 倒序：当天在前
+    dates = week_dates()  # 倒序：昨天在前
     known = {
         r.date: r
         for r in db.scalars(select(DailyRun).where(DailyRun.date.in_(dates))).all()

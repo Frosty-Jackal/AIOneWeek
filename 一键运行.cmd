@@ -52,7 +52,7 @@ if not exist "%PY%" (
 rem ---------- 2. install dependencies ----------
 :deps
 echo   [2/3] Checking dependencies ...
-"%PY%" -c "import fastapi, uvicorn, sqlalchemy, httpx, apscheduler, cryptography, dotenv" >nul 2>nul
+"%PY%" -c "import fastapi, uvicorn, sqlalchemy, httpx, cryptography, dotenv" >nul 2>nul
 if not errorlevel 1 goto :config
 
 echo         Installing from requirements.txt, this may take a few minutes ...
@@ -65,7 +65,7 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-"%PY%" -c "import fastapi, uvicorn, sqlalchemy, httpx, apscheduler, cryptography, dotenv" >nul 2>nul
+"%PY%" -c "import fastapi, uvicorn, sqlalchemy, httpx, cryptography, dotenv" >nul 2>nul
 if errorlevel 1 (
   echo.
   echo   [ERROR] Dependencies still missing after install. Retry later.

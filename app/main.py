@@ -1,4 +1,9 @@
-"""FastAPI 实例、挂载路由与静态文件、启动调度器（Spec1 §2）。"""
+"""FastAPI 实例、挂载路由与静态文件（Spec1 §2）。
+
+Spec3 §3.4 删除了每日 08:50 的定时采集：窗口改成「不含今天后」，定时采到的
+当天数据谁也看不到，进窗口时反而只是当天前 8 小时的残缺快照。采集入口只剩
+两个 —— 用户点「查看当周」时的缺口补采，以及管理端的手动采集。
+"""
 
 from __future__ import annotations
 
@@ -12,7 +17,6 @@ from fastapi.staticfiles import StaticFiles
 from .config import BASE_DIR
 from .db import init_db
 from .routers import admin, auth, rating, weekly
-from .scheduler import shutdown_scheduler, start_scheduler
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,10 +30,9 @@ STATIC_DIR = BASE_DIR / "static"
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
-    start_scheduler()
     logger.info("AIOneWeek 已启动 —— 浏览器打开 http://127.0.0.1:8000")
     yield
-    shutdown_scheduler()
+    # 无后台任务需要收尾（Spec3 §3.4 删掉了调度器）
 
 
 app = FastAPI(title="AIOneWeek", lifespan=lifespan)

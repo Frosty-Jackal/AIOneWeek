@@ -12,12 +12,19 @@ from __future__ import annotations
 
 import re
 import unittest
+from datetime import date as date_cls
+from datetime import timedelta
 from pathlib import Path
+
+from app.collector import week_dates
 
 ROOT = Path(__file__).resolve().parent.parent
 PRD = (ROOT / "Docs" / "PRD.md").read_text(encoding="utf-8")
 INDEX = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
 ADMIN = (ROOT / "static" / "admin.html").read_text(encoding="utf-8")
+REQS = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+LAUNCHER = (ROOT / "一键运行.cmd").read_text(encoding="utf-8")
+SCHEDULER = ROOT / "app" / "scheduler.py"
 
 MAILTO_RE = re.compile(r'href="mailto:([^"?]+)"')
 
@@ -60,6 +67,70 @@ class SupportChannelTest(unittest.TestCase):
                     dialog.index('class="dialog-foot"'),
                     "客服邮箱必须在 #auth-msg 之后",
                 )
+
+
+class WeeklyWindowConsistencyTest(unittest.TestCase):
+    """Spec3 §3.5 A 组 —— PRD 的窗口定义必须与 `week_dates()` 是同一件事。
+
+    「谁先改谁红」：改了代码没改文档会红，改了文档没改代码也会红。
+    """
+
+    def test_prd_drops_the_old_window_definition(self):
+        self.assertFalse(
+            "当天 + 前 6 天" in PRD,
+            "PRD 仍写着旧窗口定义（Spec3 §3.5 A 组）",
+        )
+
+    def test_prd_says_the_window_excludes_today(self):
+        self.assertFalse(
+            "不含今天" not in PRD,
+            "PRD 未写明展示窗口不含今天",
+        )
+
+    def test_prd_window_matches_week_dates(self):
+        today = date_cls.today()
+        days = week_dates(today.isoformat())
+        self.assertEqual(len(days), 7, "窗口长度变了，PRD 与 §3 都会对不上")
+        self.assertNotIn(today.isoformat(), days, "PRD 说不含今天，week_dates 却含有今天")
+        self.assertEqual(days[0], (today - timedelta(days=1)).isoformat())
+
+
+class ScheduledCollectionRemovalTest(unittest.TestCase):
+    """Spec3 §3.4 / §3.5 B 组 —— 定时采集已删除，文档与依赖都不得再提。"""
+
+    def test_prd_drops_the_scheduled_entry(self):
+        for stale in ("8:50", "定时任务"):
+            with self.subTest(stale=stale):
+                self.assertFalse(stale in PRD, f"PRD 仍写着已删除的定时采集：{stale}")
+
+    def test_prd_describes_the_on_demand_entry(self):
+        self.assertFalse(
+            "当场串行补采" not in PRD,
+            "PRD 未写明新的按需补采入口（Spec3 §3.5 B 组）",
+        )
+
+    def test_scheduler_module_is_gone(self):
+        self.assertFalse(SCHEDULER.exists(), "app/scheduler.py 应已删除（Spec3 §3.4.1）")
+
+    def test_no_module_mentions_apscheduler(self):
+        hits = [
+            str(p.relative_to(ROOT))
+            for p in (ROOT / "app").rglob("*.py")
+            if "apscheduler" in p.read_text(encoding="utf-8").lower()
+        ]
+        self.assertEqual(hits, [], "app/ 下仍有文件提到 apscheduler")
+
+    def test_requirements_drop_apscheduler(self):
+        self.assertFalse(
+            "apscheduler" in REQS.lower(), "apscheduler 应退出依赖（Spec3 §3.4.1）"
+        )
+
+    def test_launcher_selfcheck_drops_apscheduler(self):
+        """§3.4.1 点名易漏：漏了这处，装完依赖仍会报 Dependencies still missing。"""
+        self.assertFalse(
+            "apscheduler" in LAUNCHER.lower(),
+            "一键运行.cmd 的依赖自检仍要求 apscheduler",
+        )
 
 
 if __name__ == "__main__":

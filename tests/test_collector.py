@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from datetime import date as date_cls
+from datetime import timedelta
 from pathlib import Path
 from unittest import mock
 
@@ -65,6 +67,57 @@ class PromptTest(unittest.TestCase):
     def test_empty_sites_falls_back_to_placeholder(self):
         prompt = collector.build_prompt(self.db, "2026-09-29", [])
         self.assertIn("（未配置参考网站，请凭已有知识回答）", prompt)
+
+
+class WeekDatesTest(unittest.TestCase):
+    """Spec3 §3 —— 展示窗口是「不含今天的前 7 天」。
+
+    窗口右端是**昨天**而非今天：今天的采集结果只可能在今天部分完成，
+    把它摆进展示窗口等于展示一份残缺快照。
+    """
+
+    def test_window_is_the_seven_days_before_today(self):
+        self.assertEqual(
+            collector.week_dates("2026-09-30"),
+            [
+                "2026-09-29",
+                "2026-09-28",
+                "2026-09-27",
+                "2026-09-26",
+                "2026-09-25",
+                "2026-09-24",
+                "2026-09-23",
+            ],
+        )
+
+    def test_today_is_excluded_and_order_is_descending(self):
+        days = collector.week_dates("2026-09-30")
+        self.assertEqual(len(days), 7)
+        self.assertNotIn("2026-09-30", days, "今天不得进入展示窗口")
+        self.assertEqual(days, sorted(days, reverse=True), "窗口必须倒序（昨天在前）")
+
+    def test_window_covers_a_month_boundary(self):
+        """跨月不能靠字符串减法，必须走 date 运算。"""
+        self.assertEqual(
+            collector.week_dates("2026-10-03"),
+            ["2026-10-02", "2026-10-01", "2026-09-30", "2026-09-29",
+             "2026-09-28", "2026-09-27", "2026-09-26"],
+        )
+
+    def test_window_length_still_follows_the_config(self):
+        """§3.2：WEEK_WINDOW_DAYS 配置项不改，取 1 时窗口 = [today-1]。"""
+        with mock.patch.object(collector.settings, "week_window_days", 1):
+            self.assertEqual(collector.week_dates("2026-09-30"), ["2026-09-29"])
+        with mock.patch.object(collector.settings, "week_window_days", 3):
+            self.assertEqual(
+                collector.week_dates("2026-09-30"),
+                ["2026-09-29", "2026-09-28", "2026-09-27"],
+            )
+
+    def test_defaults_to_real_today(self):
+        today = date_cls.today()
+        expected = [(today - timedelta(days=i)).isoformat() for i in range(1, 8)]
+        self.assertEqual(collector.week_dates(), expected)
 
 
 class CollectFlowTest(unittest.TestCase):
