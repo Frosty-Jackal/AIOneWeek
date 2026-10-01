@@ -23,8 +23,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
+from app.config import settings
 from app.db import Base, get_db, now_iso
 from app.main import app
+from app.mailer import MailError
 from app.models import User, VerifyCode
 from app.security import encrypt_password
 
@@ -35,6 +37,30 @@ B = "b@example.com"
 
 def _stamp(delta_seconds: int) -> str:
     return (datetime.now() + timedelta(seconds=delta_seconds)).strftime(STAMP)
+
+
+class _FakeNotify:
+    """假注册通知。记下每次调用，并**另开一个会话**确认那个用户此刻已提交。
+
+    后者是「必须在 `db.commit()` 之后发信」的直接证据（Spec3 §10.4）：先发信后提交，
+    一旦提交失败（并发下 `UNIQUE(email)` 撞车），管理员会收到一封指向**不存在的用户**
+    的假通知 —— 一个凭空造出来的「新用户」比漏掉一封通知糟得多。
+    """
+
+    def __init__(self, session_factory):
+        self.session_factory = session_factory
+        self.calls: list[str] = []
+        self.user_was_committed: list[bool] = []
+        self.fail: Exception | None = None
+
+    def __call__(self, user_email: str) -> None:
+        self.calls.append(user_email)
+        with self.session_factory() as db:
+            self.user_was_committed.append(
+                db.scalar(select(User).where(User.email == user_email)) is not None
+            )
+        if self.fail is not None:
+            raise self.fail
 
 
 class _FakeMail:
@@ -50,8 +76,10 @@ class _FakeMail:
         return [code for to, code in self.calls if to == email][-1]
 
 
-class AuthRulesTest(unittest.TestCase):
-    """`/api/auth/*` 的判据。全部打在临时库上，绝不碰 `./data/aioneek.db`。"""
+# 故意**不**继承 TestCase：unittest 会把模块里每个 TestCase 子类都收集一遍，
+# 基类自己也继承的话，它的 6 条用例会在两个子类里各跑一遍。
+class _AuthCase:
+    """`/api/auth/*` 的夹具。全部打在临时库上，绝不碰 `./data/aioneek.db`。"""
 
     def setUp(self):
         tmp = Path(tempfile.mkdtemp(prefix="aioneek-auth-")) / "t.db"
@@ -78,6 +106,13 @@ class AuthRulesTest(unittest.TestCase):
 
         # **不要** `with TestClient(app) as client:` —— 那会跑 lifespan 里的
         # `init_db()`，把建表与播种打到真实的 `./data/aioneek.db` 上。
+        # 注册通知（Spec3 §10）。同样打在 `app.routers.auth` 上 —— 也是值导入。
+        # 这个 fake 另开一个会话来查那个新用户，用来证「先 commit 后发信」。
+        self.notify = _FakeNotify(self.Session)
+        notify_patcher = patch("app.routers.auth.send_register_notice", self.notify)
+        notify_patcher.start()
+        self.addCleanup(notify_patcher.stop)
+
         self.client = TestClient(app)
         self.addCleanup(self.client.close)
 
@@ -119,6 +154,9 @@ class AuthRulesTest(unittest.TestCase):
         return self.client.post(
             "/api/auth/register", json={"email": email, "code": code, "password": password}
         )
+
+class AuthRulesTest(_AuthCase, unittest.TestCase):
+    """验证码与邮箱的绑定 —— 回归护栏（§9.5）。"""
 
     # --- 用例 1（本次核心）---
 
@@ -198,6 +236,87 @@ class AuthRulesTest(unittest.TestCase):
         resp = self._register(A, "0000")  # 码压根不对，也不该走到验证码那一步
 
         self.assertEqual(resp.status_code, 409, resp.text)
+
+
+class RegisterNoticeTest(_AuthCase, unittest.TestCase):
+    """Spec3 §10.8 —— 新用户注册成功的通知邮件。"""
+
+    def test_success_notifies_once_with_the_new_email(self):
+        self._add_code(A, "1357")
+
+        resp = self._register(A, "1357")
+
+        self.assertEqual(resp.status_code, 201, resp.text)
+        self.assertEqual(self.notify.calls, [A])
+
+    def test_notification_is_sent_after_the_commit(self):
+        """发信时那个用户必须已经提交 —— 否则通知会指向一个不存在的用户。"""
+        self._add_code(A, "1357")
+
+        self._register(A, "1357")
+
+        self.assertEqual(self.notify.user_was_committed, [True])
+
+    def test_failed_notification_does_not_block_registration(self):
+        """§10.5：这封信是旁路信息，用户**根本不知道有它**。
+
+        为它报错，只会让注册成功的人以为自己没注册上 —— 所以状态码与响应体
+        必须与成功时完全一致。
+        """
+        self._add_code(A, "1357")
+        self.notify.fail = MailError("SMTP 挂了")
+
+        resp = self._register(A, "1357")
+
+        self.assertEqual(resp.status_code, 201, resp.text)
+        self.assertTrue(self.notify.calls, "通知确实被尝试过，只是失败了")
+        self.assertEqual(self._user_count(), 1, "注册必须照常落库")
+
+        # 与不失败时逐字一致（邮箱本身当然不同，那是唯一允许的区别）
+        self._add_code(B, "2468")
+        self.notify.fail = None
+        ok = self._register(B, "2468")
+        self.assertEqual(ok.status_code, 201, ok.text)
+        mask = lambda body: {**body, "email": "同一个"}  # noqa: E731
+        self.assertEqual(
+            mask(resp.json()), mask(ok.json()), "响应体必须与成功时逐字一致"
+        )
+
+    def test_empty_recipient_turns_the_notification_off(self):
+        """`REGISTER_NOTIFY_EMAIL=` → 连函数都不调用（§10.4）。"""
+        self._add_code(A, "1357")
+
+        with patch.object(settings, "register_notify_email", ""):
+            resp = self._register(A, "1357")
+
+        self.assertEqual(resp.status_code, 201, resp.text)
+        self.assertEqual(self.notify.calls, [], "空收件人时不该调用发信函数")
+        self.assertEqual(self._user_count(), 1)
+
+    def test_failure_paths_send_nothing(self):
+        """400（码不对）与 409（邮箱已存在）都不是「新用户注册成功」。"""
+        wrong = self._register(A, "0000")
+        self.assertEqual(wrong.status_code, 400, wrong.text)
+
+        self._add_user(B)
+        duplicate = self._register(B, "0000")
+        self.assertEqual(duplicate.status_code, 409, duplicate.text)
+
+        self.assertEqual(self.notify.calls, [])
+
+    def test_login_paths_send_nothing(self):
+        """触发点是「注册成功」，不是登录（§10.1）。"""
+        self._add_user(A)
+        self._add_code(A, "1357", purpose="login")
+
+        by_password = self.client.post(
+            "/api/auth/login", json={"email": A, "password": "1234"}
+        )
+        by_code = self.client.post("/api/auth/login-code", json={"email": A, "code": "1357"})
+
+        self.assertEqual(by_password.status_code, 200, by_password.text)
+        self.assertEqual(by_code.status_code, 200, by_code.text)
+        self.assertEqual(self.notify.calls, [])
 
 
 if __name__ == "__main__":

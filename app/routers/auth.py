@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..db import get_db, now_iso
-from ..mailer import MailError, send_code as send_code_mail
+from ..mailer import MailError, send_code as send_code_mail, send_register_notice
 from ..models import User, VerifyCode
 from ..schemas import LoginCodeIn, LoginIn, MeOut, RegisterIn, SendCodeIn
 from ..security import (
@@ -132,6 +132,20 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)) -> MeOut:
         )
     )
     db.commit()
+
+    # 通知管理员（Spec3 §10）。**必须在 commit 之后**：先发信后提交，一旦提交失败
+    # （并发下 UNIQUE(email) 撞车），管理员会收到一封指向不存在的用户的假通知 ——
+    # 一个凭空造出来的「新用户」比漏掉一封通知糟得多。
+    #
+    # 失败只记日志、绝不回滚已提交的注册。这与 /send-code 的处理**刻意相反**
+    # （那里 SMTP 失败回 502 且不落库）：那封信是用户要的东西本身，这封是旁路信息，
+    # 用户根本不知道有它 —— 为它报错只会让注册成功的人以为自己没注册上（§10.5）。
+    if settings.register_notify_email:
+        try:
+            send_register_notice(email)
+        except MailError as exc:
+            logger.warning("新用户注册通知发送失败：%s", exc)
+
     # 注册成功不自动登录（§6.1 步骤 5）
     return MeOut(email=email, role="user")
 

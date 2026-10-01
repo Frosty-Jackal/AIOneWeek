@@ -133,5 +133,36 @@ class ScheduledCollectionRemovalTest(unittest.TestCase):
         )
 
 
+class RegisterNoticeDocTest(unittest.TestCase):
+    """Spec3 §10.7 —— 多了一条**对外的**行为（会给管理员发信），PRD 不写就是打脸。
+
+    与 §3.5 同一问题、同一处理：断言的是跨文件一致性，不是散文措辞。
+    """
+
+    def test_prd_names_the_subject(self):
+        """主题不能只在代码里存在 —— 收到信的人得能在文档里对上号。"""
+        self.assertIn("新用户注册", PRD, "PRD 未写明注册通知的主题（Spec3 §10.7）")
+
+    def test_prd_names_the_config_variable(self):
+        """文档说的「发到哪个地址」必须与代码读的是同一个名字。
+
+        代码里是 `settings.register_notify_email`，环境变量是 `REGISTER_NOTIFY_EMAIL`
+        —— 同一件事的两端，PRD 写的是后者（§10.8 的大小写注记）。
+        """
+        self.assertIn(
+            "REGISTER_NOTIFY_EMAIL",
+            PRD,
+            "PRD 未提及 REGISTER_NOTIFY_EMAIL —— 地址换了只会改一边",
+        )
+
+    def test_prd_states_that_a_failed_notice_does_not_affect_registration(self):
+        """§10.5 的语义边界：这封信是旁路信息，发不出去也不能让注册失败。"""
+        self.assertIn(
+            "不影响注册结果",
+            PRD,
+            "PRD 漏写了「该邮件发送失败不影响注册结果」（Spec3 §10.7 / §10.5）",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

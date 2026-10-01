@@ -69,6 +69,10 @@ class Settings:
         self.smtp_user: str = _opt("SMTP_USER", "")
         self.smtp_auth_code: str = _opt("SMTP_AUTH_CODE", "")
         self.smtp_from_name: str = _opt("SMTP_FROM_NAME", "AIOneWeek")
+        # 新用户注册通知的收件地址（Spec3 §10）。留空 = 关闭该通知，
+        # 便于本地开发与自动化测试不发信。与 admin_email 同一原则：
+        # 地址进 .env，不进代码逻辑 —— 这里的字面量只是「没配时的默认值」。
+        self.register_notify_email: str = _opt("REGISTER_NOTIFY_EMAIL", "frostyj@qq.com")
 
         # --- 业务 ---
         raw_db = _opt("DB_PATH", "./data/aioneek.db")
