@@ -180,26 +180,34 @@ def _collect(db: Session, day: str, force: bool, admin_id: int | None) -> DailyR
         db, run, day, status, prompt, result.raw, len(items), result.cost_cny, stamp
     )
 
-    # 重采时先清旧条目，保证 seq 无重复（§5.4）
-    db.execute(delete(DailyTech).where(DailyTech.date == day))
-    if status == parser.STATUS_SUCCESS:
-        for seq, item in enumerate(items):
-            db.add(
-                DailyTech(
-                    date=day,
-                    seq=seq,
-                    tech_name=item["tech_name"],
-                    tech_content=item["tech_content"],
-                    innovation=item["innovation"],
-                    scenarios=json.dumps(item["scenarios"], ensure_ascii=False),
-                    publish_date=item.get("publish_date"),
-                    ref_link=item.get("ref_link"),
-                )
-            )
+    _write_items(db, day, items if status == parser.STATUS_SUCCESS else [])
 
     db.commit()
     db.refresh(run)
     return run
+
+
+def _write_items(db: Session, day: str, items: list[dict]) -> None:
+    """写入某日条目：先清旧（保证 seq 无重复），再按顺序落库。
+
+    `items` 为空表示「该日不该有条目」—— 清完即止，正是重采到 empty / parse_failed
+    时要的效果（§5.4）。由 `_collect()` 的重采路径与 `scripts/reparse_runs.py` 共用：
+    两处各写一遍序列化逻辑，早晚会漂移（Spec3 §8.5）。
+    """
+    db.execute(delete(DailyTech).where(DailyTech.date == day))
+    for seq, item in enumerate(items):
+        db.add(
+            DailyTech(
+                date=day,
+                seq=seq,
+                tech_name=item["tech_name"],
+                tech_content=item["tech_content"],
+                innovation=item["innovation"],
+                scenarios=json.dumps(item["scenarios"], ensure_ascii=False),
+                publish_date=item.get("publish_date"),
+                ref_link=item.get("ref_link"),
+            )
+        )
 
 
 def _upsert_run(
