@@ -103,6 +103,135 @@ class BuildTest(unittest.TestCase):
         self.assertEqual(_sha256(SOURCE), self.src_hash)
 
 
+class FaviconTest(unittest.TestCase):
+    """Spec3 §7 —— 把横版字标等比装进 64×64 方形透明画布。
+
+    直接引用非正方形的 static/logo.png 当图标，各家浏览器处理不一（有的拉伸、
+    有的留白），所以必须先做成正方形再引用。
+    """
+
+    SIZE = 64
+    PADDING = 4
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="aioneek-favicon-")) / "favicon.png"
+        self.logo = ROOT / "static" / "logo.png"
+        self.src_hash = _sha256(self.logo)
+        self.stats = make_logo.build_favicon(self.logo, self.tmp, self.SIZE, self.PADDING)
+
+    def test_canvas_is_square(self):
+        img = make_logo.load_png(self.tmp)
+        self.assertEqual((img.width, img.height), (self.SIZE, self.SIZE))
+        self.assertEqual(self.stats["size"], self.SIZE)
+
+    def test_content_is_scaled_proportionally(self):
+        """等比：字标不得被压扁（§7.3）。
+
+        宽高都得是整数像素，比值必然带一点取整误差 —— 断言「与理想值相差不超过
+        1px」而不是「比值精确相等」，后者把取整误判成拉伸。
+        """
+        src = make_logo.load_png(self.logo)
+        x0, y0, x1, y1 = src.content_bbox(make_logo.CONTENT_THRESHOLD)
+        out_w, out_h = self.stats["content"]
+        ideal_h = (y1 - y0) * out_w / (x1 - x0)
+        self.assertLessEqual(abs(out_h - ideal_h), 1, f"{out_w}×{out_h} 相对理想高 {ideal_h:.2f} 偏离超过 1px")
+
+    def test_content_fits_inside_the_padding(self):
+        """等比缩放到 padding 内，两侧留透明边，不得贴边也不得被截断。"""
+        img = make_logo.load_png(self.tmp)
+        box = img.content_bbox()
+        self.assertIsNotNone(box, "整幅透明 —— 内容没画上去")
+        cx0, cy0, cx1, cy1 = box
+        self.assertGreaterEqual(cx0, self.PADDING)
+        self.assertGreaterEqual(cy0, self.PADDING)
+        self.assertLessEqual(cx1, self.SIZE - self.PADDING)
+        self.assertLessEqual(cy1, self.SIZE - self.PADDING)
+
+    def test_content_is_centred(self):
+        """左右（或上下）留白之差最多 1px —— 字标是横版，水平方向居中。"""
+        img = make_logo.load_png(self.tmp)
+        x0, y0, x1, y1 = img.content_bbox()
+        self.assertLessEqual(abs(x0 - (self.SIZE - x1)), 1, "水平未居中")
+        self.assertLessEqual(abs(y0 - (self.SIZE - y1)), 1, "垂直未居中")
+
+    def test_has_alpha_channel(self):
+        """§7.7：带 alpha 通道 —— 否则浏览器按不透明方块渲染，四角是白块。"""
+        img = make_logo.load_png(self.tmp)
+        self.assertEqual(img.width * img.height, len(img.pixels) // 4)
+        corners = (0, self.SIZE - 1, (self.SIZE - 1) * self.SIZE, self.SIZE * self.SIZE - 1)
+        for offset in corners:
+            with self.subTest(corner=offset):
+                self.assertEqual(img.pixels[offset * 4 + 3], 0, "四角应全透明")
+
+    def test_fully_transparent_areas_have_clean_rgb(self):
+        img = make_logo.load_png(self.tmp)
+        dirty = sum(
+            1
+            for i in range(0, len(img.pixels), 4)
+            if img.pixels[i + 3] == 0 and (img.pixels[i] or img.pixels[i + 1] or img.pixels[i + 2])
+        )
+        self.assertEqual(dirty, 0)
+
+    def test_under_twenty_kilobytes(self):
+        """§7.7：为标签页图标拉几十 KB 没有道理。"""
+        self.assertLess(self.tmp.stat().st_size, 20 * 1024)
+
+    def test_blank_source_is_rejected(self):
+        """整幅透明要报错，不能静默写出一张看不见的图标。"""
+        blank = Path(tempfile.mkdtemp(prefix="aioneek-blank-")) / "blank.png"
+        blank.write_bytes(make_logo.encode_png(8, 8, bytes(8 * 8 * make_logo.BPP)))
+        with self.assertRaises(ValueError):
+            make_logo.build_favicon(blank, self.tmp)
+
+    def test_stamp_is_copied_whole(self):
+        """回归：居中贴图按行切片，行宽算错会画出斜条纹、丢像素或重复像素。
+
+        判据用「不透明像素总数与缩放结果一致」—— 与字画形状无关（字标逐行的左右
+        边界本来就不齐，拿边界当判据是错的），但错位必然让计数对不上。
+        """
+        src = make_logo.load_png(self.logo)
+        box = src.content_bbox(make_logo.CONTENT_THRESHOLD)
+        out_w, out_h = self.stats["content"]
+        stamp = make_logo.resize_area(src, box, out_w, out_h)
+        expected = sum(1 for i in range(3, len(stamp), 4) if stamp[i])
+
+        got = make_logo.load_png(self.tmp).pixels
+        actual = sum(1 for i in range(3, len(got), 4) if got[i])
+        self.assertEqual(actual, expected, "贴图后不透明像素数变了 —— 行切片错位")
+
+    def test_source_logo_is_untouched(self):
+        self.assertEqual(_sha256(self.logo), self.src_hash)
+
+
+class FaviconAssetTest(unittest.TestCase):
+    """§7.5 / §7.7 —— 产物已落库，两个页面都引用了它。"""
+
+    FAVICON = ROOT / "static" / "favicon.png"
+    LINK = '<link rel="icon" type="image/png" href="/static/favicon.png">'
+
+    def test_favicon_exists_and_is_64x64(self):
+        self.assertTrue(self.FAVICON.exists(), "static/favicon.png 尚未生成")
+        img = make_logo.load_png(self.FAVICON)
+        self.assertEqual((img.width, img.height), (64, 64))
+
+    def test_both_pages_link_it_after_the_title(self):
+        for name in ("index.html", "admin.html"):
+            with self.subTest(file=name):
+                html = (ROOT / "static" / name).read_text(encoding="utf-8")
+                self.assertIn(self.LINK, html)
+                self.assertLess(html.index("<title>"), html.index(self.LINK), "图标应在 <title> 之后")
+
+    def test_master_files_stay_out_of_runtime(self):
+        """§7.7：`git grep "logotransparent" static/` 零命中 —— 母版 1.7 MB 不进运行时。"""
+        hits = [
+            name
+            for name in sorted(p.name for p in (ROOT / "static").iterdir())
+            if name.endswith((".html", ".css", ".js"))
+            and "logotransparent" in (ROOT / "static" / name).read_text(encoding="utf-8")
+        ]
+        self.assertEqual(hits, [])
+
+
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 

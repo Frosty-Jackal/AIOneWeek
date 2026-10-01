@@ -277,12 +277,62 @@ def build_logo(src: Path, dst: Path, target_height: int = 128) -> dict:
     }
 
 
+def build_favicon(src: Path, dst: Path, size: int = 64, padding: int = 4) -> dict:
+    """把横版字标等比装进 size×size 的方形透明画布，居中，不拉伸（Spec3 §7）。
+
+    直接引用横版 logo.png 当图标时，浏览器各家处理不一 —— 有的拉伸填满方格
+    （字标被压扁），有的留白（图形偏小且不居中）。先做成正方形是唯一稳定的做法。
+
+    `resize_area` 只能把源矩形铺满整个输出，故在其上补一层「等比缩放 + 居中贴图」。
+    """
+    img = load_png(src)
+    box = img.content_bbox(CONTENT_THRESHOLD)
+    if box is None:
+        raise ValueError(f"{src} 整幅透明，没有内容")
+
+    x0, y0, x1, y1 = box
+    inner = size - padding * 2
+    scale = min(inner / (x1 - x0), inner / (y1 - y0))
+    out_w = max(1, round((x1 - x0) * scale))
+    out_h = max(1, round((y1 - y0) * scale))
+    stamp = resize_area(img, box, out_w, out_h)
+
+    canvas = bytearray(size * size * BPP)  # 全透明
+    ox, oy = (size - out_w) // 2, (size - out_h) // 2
+    for y in range(out_h):
+        start = ((oy + y) * size + ox) * BPP
+        canvas[start : start + out_w * BPP] = stamp[y * out_w * BPP : (y + 1) * out_w * BPP]
+
+    payload = encode_png(size, size, bytes(canvas))
+    dst = Path(dst)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    dst.write_bytes(payload)
+    return {"size": size, "content": (out_w, out_h), "bytes": len(payload)}
+
+
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="生成顶栏 logo（Spec2 §5.5）")
+    ap = argparse.ArgumentParser(description="生成顶栏 logo 与标签页图标（Spec2 §5.5 / Spec3 §7）")
     ap.add_argument("--src", type=Path, default=DEFAULT_SOURCE)
     ap.add_argument("--dst", type=Path, default=DEFAULT_TARGET)
     ap.add_argument("--height", type=int, default=128)
+    ap.add_argument(
+        "--favicon",
+        action="store_true",
+        help="生成方形标签页图标：读 static/logo.png，写 static/favicon.png（64×64）",
+    )
     args = ap.parse_args(argv)
+
+    if args.favicon:
+        # 源字标固定是 static/logo.png（要先跑一次不带 --favicon 的既有路径拿到它）
+        src = DEFAULT_TARGET
+        dst = (args.dst if args.dst != DEFAULT_TARGET else src.with_name("favicon.png"))
+        stats = build_favicon(src, dst)
+        w, h = stats["content"]
+        print(f"源字标：{src}")
+        print(f"产物：{dst}")
+        print(f"  {stats['size']}×{stats['size']}，内容 {w}×{h} 居中，"
+              f"{stats['bytes'] / 1024:.1f} KB")
+        return 0
 
     stats = build_logo(args.src, args.dst, args.height)
     print(f"母版：{args.src}")
