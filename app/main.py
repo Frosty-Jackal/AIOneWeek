@@ -53,3 +53,16 @@ def index() -> FileResponse:
 @app.get("/admin", include_in_schema=False)
 def admin_page() -> FileResponse:
     return FileResponse(STATIC_DIR / "admin.html")
+
+
+# 爬虫协议与站点地图必须挂在**根路径**：StaticFiles 只挂在 /static 下，
+# 而爬虫只会去取 /robots.txt 与 /sitemap.xml（那是协议规定的位置）。
+# 这两个文件放在 static/ 里是为了与其它静态资源一起维护。
+@app.get("/robots.txt", include_in_schema=False)
+def robots_txt() -> FileResponse:
+    return FileResponse(STATIC_DIR / "robots.txt", media_type="text/plain")
+
+
+@app.get("/sitemap.xml", include_in_schema=False)
+def sitemap_xml() -> FileResponse:
+    return FileResponse(STATIC_DIR / "sitemap.xml", media_type="application/xml")

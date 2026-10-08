@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /static/admin.html
+Disallow: /api/
+
+Sitemap: https://aioneweek.tech/sitemap.xml
